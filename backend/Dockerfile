@@ -17,4 +17,6 @@ ENV DJANGO_SETTINGS_MODULE=config.settings.dev
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 config.asgi:application"]
+CMD python manage.py migrate --noinput && \
+    python manage.py collectstatic --noinput && \
+    daphne -b 0.0.0.0 -p ${PORT:-8000} config.asgi:application
