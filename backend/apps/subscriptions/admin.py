@@ -10,4 +10,4 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
 
 @admin.register(VendorSubscription)
 class VendorSubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("business", "plan", "active", "renews_at")
+    list_display = ("business", "plan", "status", "expires_at", "auto_renew")
