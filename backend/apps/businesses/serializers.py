@@ -4,6 +4,11 @@ from .models import Business
 
 
 class BusinessSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(
+        read_only=True,
+        help_text="Unique business identifier (UUID). Copy this from the create response — you need it for all subsequent requests (location, review, approve, products, etc.).",
+    )
+
     class Meta:
         model = Business
         fields = (
