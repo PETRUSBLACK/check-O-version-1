@@ -4,9 +4,11 @@ from .models import Business
 
 
 class BusinessSerializer(serializers.ModelSerializer):
+    # Explicitly declared so Swagger correctly marks id as read-only
+    # and does not ask for it in the create request form.
     id = serializers.UUIDField(
         read_only=True,
-        help_text="Unique business identifier (UUID). Copy this from the create response — you need it for all subsequent requests (location, review, approve, products, etc.).",
+        help_text="Auto-generated UUID. Copy this from the create response — required for all subsequent requests.",
     )
 
     class Meta:
