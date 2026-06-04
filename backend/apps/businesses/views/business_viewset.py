@@ -2,12 +2,15 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiResponse, OpenApiParameter
-from drf_spectacular.openapi import AutoSchema
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiResponse
 
 from core.permissions import IsStaffOrPlatformAdmin, IsVendor
-from apps.businesses.models import Business, BusinessStatus
-from apps.businesses.serializers import BusinessRejectSerializer, BusinessSerializer
+from apps.businesses.models import Business, BusinessCategory, BusinessStatus
+from apps.businesses.serializers import (
+    BusinessCategorySerializer,
+    BusinessRejectSerializer,
+    BusinessSerializer,
+)
 from apps.businesses.services.registration import (
     BusinessFlowError,
     approve_business,
@@ -22,35 +25,21 @@ from apps.businesses.services.registration import (
         tags=["businesses"],
         summary="List businesses",
         description=(
-            "Returns a list of businesses. "
-            "*Admins/staff* see all businesses regardless of status. "
-            "*Vendors* see only their own businesses. "
-            "*Customers / unauthenticated* see only approved businesses. "
-            "Authenticate via the Authorize button (JWT) to see more results."
+            "**Admins/staff** see all businesses. "
+            "**Vendors** see only their own. "
+            "**Customers / unauthenticated** see only approved businesses. "
+            "Filter by category using `?category=hotel`, `?category=restaurant`, etc."
         ),
         responses={200: BusinessSerializer(many=True)},
     ),
     retrieve=extend_schema(
         tags=["businesses"],
         summary="Get a business by UUID",
-        description="Retrieve full details of a single business. Pass the id (UUID) returned when the business was created.",
         responses={200: BusinessSerializer},
     ),
-    update=extend_schema(
-        tags=["businesses"],
-        summary="Update a business (full)",
-        responses={200: BusinessSerializer},
-    ),
-    partial_update=extend_schema(
-        tags=["businesses"],
-        summary="Update a business (partial)",
-        responses={200: BusinessSerializer},
-    ),
-    destroy=extend_schema(
-        tags=["businesses"],
-        summary="Delete a business (draft only)",
-        responses={204: OpenApiResponse(description="Deleted successfully")},
-    ),
+    update=extend_schema(tags=["businesses"], summary="Update a business (full)", responses={200: BusinessSerializer}),
+    partial_update=extend_schema(tags=["businesses"], summary="Update a business (partial)", responses={200: BusinessSerializer}),
+    destroy=extend_schema(tags=["businesses"], summary="Delete a business (draft only)"),
 )
 class BusinessViewSet(viewsets.ModelViewSet):
     """CRUD: Business management."""
@@ -70,32 +59,40 @@ class BusinessViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Business.objects.select_related("owner").all()
         user = self.request.user
+
         if not user.is_authenticated:
-            return qs.filter(status=BusinessStatus.APPROVED)
-        if user.is_staff or getattr(user, "role", None) == "admin":
-            return qs
-        if getattr(user, "role", None) == "vendor":
-            return qs.filter(owner=user)
-        return qs.filter(status=BusinessStatus.APPROVED)
+            qs = qs.filter(status=BusinessStatus.APPROVED)
+        elif user.is_staff or getattr(user, "role", None) == "admin":
+            pass  # see all
+        elif getattr(user, "role", None) == "vendor":
+            qs = qs.filter(owner=user)
+        else:
+            qs = qs.filter(status=BusinessStatus.APPROVED)
+
+        # Filter by category if provided
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+
+        return qs
 
     @extend_schema(
         tags=["businesses"],
         summary="Register a new business",
         description=(
-            "Creates a new business in *draft* status. "
-            "The response includes the business id (UUID) — *copy this value*, "
-            "you will need it for all subsequent requests such as submitting for review, "
-            "setting a location, or managing products.\n\n"
-            "Requires a *Vendor* role JWT token."
+            "Creates a new business in **draft** status. "
+            "The `id` (UUID) in the response is required for all subsequent requests. "
+            "Choose a `category` from: retail, grocery, restaurant, hotel, pharmacy, "
+            "fashion, electronics, beauty, health, education, automobile, other."
         ),
         request=BusinessSerializer,
         responses={
             201: OpenApiResponse(
                 response=BusinessSerializer,
-                description="Business created. The id field is the UUID to use in all future requests.",
+                description="Business created. Copy the `id` UUID from this response.",
             ),
             400: OpenApiResponse(description="Validation error"),
-            403: OpenApiResponse(description="Only vendors can register a business"),
+            403: OpenApiResponse(description="Vendor role required"),
         },
     )
     def create(self, request, *args, **kwargs):
@@ -106,6 +103,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
             owner=request.user,
             name=vd["name"],
             slug=vd["slug"],
+            category=vd.get("category") or BusinessCategory.RETAIL,
             legal_name=vd.get("legal_name") or "",
             registration_number=vd.get("registration_number") or "",
             tax_identifier=vd.get("tax_identifier") or "",
@@ -139,15 +137,28 @@ class BusinessViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You can only delete a draft business.")
         instance.delete()
 
+    @action(detail=False, methods=["get"], url_path="categories", permission_classes=[permissions.AllowAny])
+    @extend_schema(
+        tags=["businesses"],
+        summary="List all business categories",
+        description="Returns all available categories a vendor can register under.",
+        responses={200: BusinessCategorySerializer(many=True)},
+    )
+    def categories(self, request):
+        """Returns all available business categories."""
+        data = [
+            {"value": value, "label": label}
+            for value, label in BusinessCategory.choices
+        ]
+        return Response(data)
+
     @action(detail=True, methods=["post"], url_path="submit-for-review")
     @extend_schema(
         tags=["businesses"],
         summary="Submit business for admin verification",
-        description="Moves the business from *draft* to *pending* status. Use the business id (UUID) in the URL.",
         responses={
             200: OpenApiResponse(response=BusinessSerializer, description="Submitted successfully"),
-            400: OpenApiResponse(description="Business is not in a submittable state"),
-            403: OpenApiResponse(description="You can only submit your own business"),
+            400: OpenApiResponse(description="Missing required fields or invalid state"),
         },
     )
     def submit_for_review(self, request, pk=None):
@@ -165,11 +176,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=["businesses"],
         summary="Approve business (admin only)",
-        description="Approves a pending business. Requires admin/staff role.",
-        responses={
-            200: OpenApiResponse(response=BusinessSerializer, description="Business approved"),
-            400: OpenApiResponse(description="Business is not in pending state"),
-        },
+        responses={200: OpenApiResponse(response=BusinessSerializer, description="Approved")},
     )
     def approve(self, request, pk=None):
         try:
@@ -182,12 +189,8 @@ class BusinessViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=["businesses"],
         summary="Reject business (admin only)",
-        description="Rejects a pending business with a reason. Requires admin/staff role.",
         request=BusinessRejectSerializer,
-        responses={
-            200: OpenApiResponse(response=BusinessSerializer, description="Business rejected"),
-            400: OpenApiResponse(description="Business is not in pending state"),
-        },
+        responses={200: OpenApiResponse(response=BusinessSerializer, description="Rejected")},
     )
     def reject(self, request, pk=None):
         ser = BusinessRejectSerializer(data=request.data)

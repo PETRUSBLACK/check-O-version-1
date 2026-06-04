@@ -40,7 +40,12 @@ class SetBusinessLocationView(APIView):
     """Workflow: Vendor sets their shop's physical location."""
     permission_classes = [IsAuthenticated, IsVendor]
 
-    @extend_schema(request=BusinessLocationSerializer, responses={200: BusinessLocationSerializer}, tags=["businesses"], summary="Set or update shop location")
+    @extend_schema(
+        request=BusinessLocationSerializer,
+        responses={200: BusinessLocationSerializer},
+        tags=["businesses"],
+        summary="Set or update shop location",
+    )
     def post(self, request, pk=None):
         business = Business.objects.filter(pk=pk, owner=request.user).first()
         if not business:
@@ -59,13 +64,18 @@ class SetBusinessLocationView(APIView):
 class NearbyShopsView(APIView):
     """
     Workflow: Search for approved shops near a given location.
-    Optional: filter by product name.
+    Optional: filter by category or product name.
     """
     permission_classes = [AllowAny]
 
-    @extend_schema(tags=["businesses"], summary="Find shops near a location", description=(
-        "Pass `lat`, `lng`, and optional `radius_km` (default 10) and `product` query params."
-    ))
+    @extend_schema(
+        tags=["businesses"],
+        summary="Find shops near a location",
+        description=(
+            "Pass `lat`, `lng`, and optional `radius_km` (default 10), "
+            "`category` (e.g. hotel, restaurant, retail), and `product` query params."
+        ),
+    )
     def get(self, request):
         try:
             lat = float(request.query_params.get("lat", 0))
@@ -75,10 +85,15 @@ class NearbyShopsView(APIView):
 
         radius_km = float(request.query_params.get("radius_km", 10))
         product_query = request.query_params.get("product", "").strip()
+        category_filter = request.query_params.get("category", "").strip()
 
         locations = BusinessLocation.objects.select_related(
-            "business__ratings"
+            "business"
         ).filter(business__status=BusinessStatus.APPROVED)
+
+        # Filter by category if provided
+        if category_filter:
+            locations = locations.filter(business__category=category_filter)
 
         results = []
         for loc in locations:
@@ -95,7 +110,7 @@ class NearbyShopsView(APIView):
                         continue
 
                 # Calculate average rating
-                ratings = business.ratings.all()
+                ratings = list(business.ratings.all())
                 avg_rating = (
                     sum(r.score for r in ratings) / len(ratings)
                     if ratings else None
@@ -104,6 +119,8 @@ class NearbyShopsView(APIView):
                 results.append({
                     "business_id": str(business.pk),
                     "name": business.name,
+                    "category": business.category,
+                    "category_display": business.get_category_display(),
                     "address": loc.full_address,
                     "city": loc.city,
                     "state": loc.state,
@@ -122,13 +139,17 @@ class RateBusinessView(APIView):
     """Workflow: Customer rates a business after a completed order."""
     permission_classes = [IsAuthenticated, IsCustomer]
 
-    @extend_schema(request=BusinessRatingSerializer, responses={201: BusinessRatingSerializer}, tags=["businesses"], summary="Rate a vendor shop")
+    @extend_schema(
+        request=BusinessRatingSerializer,
+        responses={201: BusinessRatingSerializer},
+        tags=["businesses"],
+        summary="Rate a vendor shop",
+    )
     def post(self, request, pk=None):
         business = Business.objects.filter(pk=pk).first()
         if not business:
             return Response({"detail": "Business not found."}, status=404)
 
-        # Verify customer has a completed order from this business
         from apps.orders.models import Order, OrderStatus
         has_order = Order.objects.filter(
             customer=request.user,
@@ -162,7 +183,11 @@ class BusinessRatingsView(APIView):
     """CRUD: List all ratings for a business."""
     permission_classes = [AllowAny]
 
-    @extend_schema(responses={200: BusinessRatingSerializer(many=True)}, tags=["businesses"], summary="List ratings for a shop")
+    @extend_schema(
+        responses={200: BusinessRatingSerializer(many=True)},
+        tags=["businesses"],
+        summary="List ratings for a shop",
+    )
     def get(self, request, pk=None):
         business = Business.objects.filter(pk=pk).first()
         if not business:

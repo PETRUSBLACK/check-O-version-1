@@ -12,6 +12,21 @@ class BusinessStatus(models.TextChoices):
     SUSPENDED = "suspended", "Suspended"
 
 
+class BusinessCategory(models.TextChoices):
+    RETAIL = "retail", "Retail Shop"
+    GROCERY = "grocery", "Grocery / Supermarket"
+    RESTAURANT = "restaurant", "Restaurant / Food"
+    HOTEL = "hotel", "Hotel / Lodging"
+    PHARMACY = "pharmacy", "Pharmacy"
+    FASHION = "fashion", "Fashion / Clothing"
+    ELECTRONICS = "electronics", "Electronics"
+    BEAUTY = "beauty", "Beauty / Salon"
+    HEALTH = "health", "Health / Fitness"
+    EDUCATION = "education", "Education / Training"
+    AUTOMOBILE = "automobile", "Automobile / Auto Parts"
+    OTHER = "other", "Other"
+
+
 class Business(UUIDTimeStampedModel):
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -20,6 +35,12 @@ class Business(UUIDTimeStampedModel):
     )
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
+    category = models.CharField(
+        max_length=50,
+        choices=BusinessCategory.choices,
+        default=BusinessCategory.RETAIL,
+        help_text="Primary category of this business.",
+    )
     status = models.CharField(
         max_length=20,
         choices=BusinessStatus.choices,
@@ -51,7 +72,7 @@ class Business(UUIDTimeStampedModel):
         ordering = ["name"]
 
     def __str__(self) -> str:
-        return self.name
+        return f"{self.name} ({self.get_category_display()})"
 
 
 class BusinessLocation(UUIDTimeStampedModel):

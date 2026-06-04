@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 
-from apps.businesses.models import Business, BusinessStatus
+from apps.businesses.models import Business, BusinessCategory, BusinessStatus
 
 
 def register_business(
@@ -9,6 +9,7 @@ def register_business(
     owner,
     name: str,
     slug: str,
+    category: str = BusinessCategory.RETAIL,
     legal_name: str = "",
     registration_number: str = "",
     tax_identifier: str = "",
@@ -20,6 +21,7 @@ def register_business(
             owner=owner,
             name=name,
             slug=slug,
+            category=category,
             status=BusinessStatus.DRAFT,
             legal_name=legal_name,
             registration_number=registration_number,

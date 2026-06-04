@@ -7,6 +7,7 @@ from .models import Business
 class BusinessAdmin(admin.ModelAdmin):
     list_display = (
         "name",
+        "category",
         "slug",
         "owner",
         "status",
@@ -16,7 +17,7 @@ class BusinessAdmin(admin.ModelAdmin):
         "verified_at",
         "created_at",
     )
-    list_filter = ("status",)
+    list_filter = ("status", "category")
     search_fields = (
         "name",
         "slug",
