@@ -14,7 +14,7 @@ from apps.businesses.views import (
     BusinessViewSet, SetBusinessLocationView,
     NearbyShopsView, RateBusinessView, BusinessRatingsView,
 )
-from apps.products.views import ProductViewSet, SetChannelAllocationView, AllocationStatusView
+from apps.products.views import ProductViewSet
 from apps.orders.views import OrderViewSet, OrderStatusView, MarkReadyForPickupView, ConfirmPickupView
 from apps.payments.views import (
     PaymentViewSet, InitiatePaymentView, MockConfirmPaymentView,
@@ -34,6 +34,14 @@ from apps.ai_assistant.views import (
     ConversationListView,
     SmartSearchView,
     DemandForecastView,
+)
+from apps.dining.views import (
+    MenuView, MenuSectionView, MenuItemView,
+    ToggleMenuItemView, DietaryFlagsView,
+    MakeReservationView, CustomerReservationListView,
+    CustomerReservationCancelView, VendorReservationListView,
+    ConfirmReservationView, RejectReservationView,
+    CompleteReservationView,
 )
 from apps.cart.views import (
     CartViewSet, AddToCartView, UpdateCartItemView,
@@ -76,10 +84,6 @@ urlpatterns = [
     path("auth/password/reset/", PasswordResetRequestView.as_view(), name="auth-password-reset-request"),
     path("auth/password/reset/confirm/", PasswordResetConfirmView.as_view(), name="auth-password-reset-confirm"),
     path("auth/logout/", LogoutView.as_view(), name="auth-logout"),
-
-    # Channel Allocation — for multi-channel vendors (supermarkets, large businesses)
-    path("products/<uuid:pk>/allocation/", SetChannelAllocationView.as_view(), name="product-allocation"),
-    path("businesses/<uuid:business_id>/allocation-status/", AllocationStatusView.as_view(), name="business-allocation-status"),
 
     # Cart
     path("cart/add/", AddToCartView.as_view(), name="cart-add"),
@@ -129,3 +133,34 @@ urlpatterns = [
     # Router (CRUD)
     path("", include(router.urls)),
 ]
+
+# Dining — Menus
+dining_urlpatterns = [
+    # Dietary flags (public)
+    path("dining/dietary-flags/", DietaryFlagsView.as_view(), name="dining-dietary-flags"),
+
+    # Menu (public GET, vendor POST/PUT)
+    path("businesses/<uuid:business_id>/menu/", MenuView.as_view(), name="dining-menu"),
+
+    # Menu sections (vendor)
+    path("businesses/<uuid:business_id>/menu/sections/", MenuSectionView.as_view(), name="dining-section-add"),
+    path("businesses/<uuid:business_id>/menu/sections/<uuid:section_id>/", MenuSectionView.as_view(), name="dining-section-delete"),
+
+    # Menu items (vendor)
+    path("businesses/<uuid:business_id>/menu/sections/<uuid:section_id>/items/", MenuItemView.as_view(), name="dining-item-add"),
+    path("businesses/<uuid:business_id>/menu/sections/<uuid:section_id>/items/<uuid:item_id>/", MenuItemView.as_view(), name="dining-item-detail"),
+    path("businesses/<uuid:business_id>/menu/items/<uuid:item_id>/toggle/", ToggleMenuItemView.as_view(), name="dining-item-toggle"),
+
+    # Reservations — customer
+    path("businesses/<uuid:business_id>/reservations/", MakeReservationView.as_view(), name="dining-reservation-make"),
+    path("dining/my-reservations/", CustomerReservationListView.as_view(), name="dining-my-reservations"),
+    path("dining/my-reservations/<uuid:reservation_id>/cancel/", CustomerReservationCancelView.as_view(), name="dining-reservation-cancel"),
+
+    # Reservations — vendor
+    path("businesses/<uuid:business_id>/reservations/manage/", VendorReservationListView.as_view(), name="dining-reservations-vendor"),
+    path("businesses/<uuid:business_id>/reservations/<uuid:reservation_id>/confirm/", ConfirmReservationView.as_view(), name="dining-reservation-confirm"),
+    path("businesses/<uuid:business_id>/reservations/<uuid:reservation_id>/reject/", RejectReservationView.as_view(), name="dining-reservation-reject"),
+    path("businesses/<uuid:business_id>/reservations/<uuid:reservation_id>/complete/", CompleteReservationView.as_view(), name="dining-reservation-complete"),
+]
+
+urlpatterns += dining_urlpatterns

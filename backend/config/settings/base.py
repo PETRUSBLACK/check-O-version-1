@@ -16,12 +16,6 @@ ALLOWED_HOSTS = [
     if h.strip()
 ]
 
-# Allow Railway deployment domains automatically
-ALLOWED_HOSTS += [".railway.app", ".up.railway.app"]
-RAILWAY_PUBLIC_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-if RAILWAY_PUBLIC_DOMAIN:
-    ALLOWED_HOSTS.append(RAILWAY_PUBLIC_DOMAIN)
-
 INSTALLED_APPS = [
     "jazzmin",
     "daphne",
@@ -51,11 +45,11 @@ INSTALLED_APPS = [
     "apps.analytics",
     "apps.ai_assistant",
     "apps.cart",
+    "apps.dining",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -108,10 +102,8 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# STATIC_URL = "static/"
-STATIC_URL = "/static/"
+STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -315,11 +307,3 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 # AI Assistant
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-
-# CSRF trusted origins — required for Railway and production domains
-CSRF_TRUSTED_ORIGINS = [
-    "https://*.railway.app",
-    "https://*.up.railway.app",
-] + [
-    f"https://{h}" for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()
-]
