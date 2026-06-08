@@ -1,11 +1,11 @@
-from .menu_views import (
+from apps.dining.views.menu_views import (
     MenuView,
     MenuSectionView,
     MenuItemView,
     ToggleMenuItemView,
     DietaryFlagsView,
 )
-from .reservation_views import (
+from apps.dining.views.reservation_views import (
     MakeReservationView,
     CustomerReservationListView,
     CustomerReservationCancelView,
