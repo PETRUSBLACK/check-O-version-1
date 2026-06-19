@@ -1,26 +1,27 @@
+"""
 Production settings for Check-O.
 Extends base.py with secure production overrides.
 
-All secrets must come from environment variables — never hardcoded here.
+All secrets must come from environment variables - never hardcoded here.
 
 Required env vars:
-    SECRET_KEY           — long random string
-    DATABASE_URL         — postgres://user:pass@host:5432/db  (Railway sets automatically)
-    REDIS_URL            — redis://host:6379/0  (Railway sets automatically)
-    ALLOWED_HOSTS        — comma-separated domains; Railway domain included automatically
-    CORS_ALLOWED_ORIGINS — comma-separated list of allowed frontend origins
-    DEFAULT_FROM_EMAIL   — sender address for transactional emails
-    EMAIL_HOST           — SMTP host
-    EMAIL_HOST_USER      — SMTP user
-    EMAIL_HOST_PASSWORD  — SMTP password
-    FRONTEND_ORIGIN      — base URL of the React Native / web frontend
+    SECRET_KEY           - long random string
+    DATABASE_URL         - postgres://user:pass@host:5432/db  (Railway sets automatically)
+    REDIS_URL            - redis://host:6379/0  (Railway sets automatically)
+    ALLOWED_HOSTS        - comma-separated domains; Railway domain included automatically
+    CORS_ALLOWED_ORIGINS - comma-separated list of allowed frontend origins
+    DEFAULT_FROM_EMAIL   - sender address for transactional emails
+    EMAIL_HOST           - SMTP host
+    EMAIL_HOST_USER      - SMTP user
+    EMAIL_HOST_PASSWORD  - SMTP password
+    FRONTEND_ORIGIN      - base URL of the React Native / web frontend
 """
 
 import os
 
 from .base import *  # noqa: F401, F403
 
-# ─── Core ─────────────────────────────────────────────────────────────────────
+# --- Core ---
 
 DEBUG = False
 
@@ -35,7 +36,7 @@ ALLOWED_HOSTS = [
     if h.strip()
 ] + ([_railway_domain] if _railway_domain else [])
 
-# ─── Security headers ─────────────────────────────────────────────────────────
+# --- Security headers ---
 
 # Railway terminates SSL at their proxy and forwards plain HTTP internally.
 # SECURE_SSL_REDIRECT=True causes an infinite redirect loop on Railway.
@@ -49,7 +50,7 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = "DENY"
 
-# ─── Static files (WhiteNoise) ────────────────────────────────────────────────
+# --- Static files (WhiteNoise) ---
 
 # DEBUG=False disables Django's dev static server. WhiteNoise serves static
 # files directly from Daphne without needing a separate nginx/CDN layer.
@@ -62,7 +63,7 @@ MIDDLEWARE = [  # noqa: F405
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # noqa: F405
 
-# ─── Branding ─────────────────────────────────────────────────────────────────
+# --- Branding ---
 
 SPECTACULAR_SETTINGS = {  # noqa: F405
     **SPECTACULAR_SETTINGS,  # noqa: F405
@@ -78,10 +79,10 @@ JAZZMIN_SETTINGS = {  # noqa: F405
     "copyright": "Check-O",
 }
 
-# ─── Database ─────────────────────────────────────────────────────────────────
+# --- Database ---
 # Inherited from base.py via dj_database_url + DATABASE_URL env var
 
-# ─── Email ────────────────────────────────────────────────────────────────────
+# --- Email ---
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.mailgun.org")
@@ -90,12 +91,12 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 
-# ─── CORS ─────────────────────────────────────────────────────────────────────
-# Inherited from base.py — reads CORS_ALLOWED_ORIGINS env var
+# --- CORS ---
+# Inherited from base.py - reads CORS_ALLOWED_ORIGINS env var
 
 CORS_ALLOW_ALL_ORIGINS = False
 
-# ─── Throttling ───────────────────────────────────────────────────────────────
+# --- Throttling ---
 
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,  # noqa: F405
@@ -107,7 +108,7 @@ REST_FRAMEWORK = {
     },
 }
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
+# --- Logging ---
 
 LOGGING = {
     "version": 1,
