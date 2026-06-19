@@ -34,7 +34,7 @@ ALLOWED_HOSTS = [
     h.strip()
     for h in os.environ.get("ALLOWED_HOSTS", "").split(",")
     if h.strip()
-] + ([_railway_domain] if _railway_domain else [])
+] + ([_railway_domain] if _railway_domain else []) + ["healthcheck.railway.app"]
 
 # --- Security headers ---
 
