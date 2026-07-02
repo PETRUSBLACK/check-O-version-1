@@ -10,18 +10,25 @@ class BusinessStatus(models.TextChoices):
 
 
 class BusinessCategory(models.TextChoices):
-    RETAIL = "retail", "Retail Shop"
-    GROCERY = "grocery", "Grocery / Supermarket"
-    RESTAURANT = "restaurant", "Restaurant / Food"
-    HOTEL = "hotel", "Hotel / Lodging"
+    RETAIL = "retail", "Retail Store"
+    SUPERMARKET = "supermarket", "Supermarket"
     PHARMACY = "pharmacy", "Pharmacy"
-    FASHION = "fashion", "Fashion / Clothing"
+    RESTAURANT = "restaurant", "Restaurant"
+
+    HOTEL = "hotel", "Hotel"
+    FASHION = "fashion", "Fashion"
     ELECTRONICS = "electronics", "Electronics"
-    BEAUTY = "beauty", "Beauty / Salon"
-    HEALTH = "health", "Health / Fitness"
-    EDUCATION = "education", "Education / Training"
-    AUTOMOBILE = "automobile", "Automobile / Auto Parts"
+    BEAUTY = "beauty", "Beauty & Salon"
+    HEALTH = "health", "Health & Fitness"
+    EDUCATION = "education", "Education"
+    AUTOMOBILE = "automobile", "Automobile"
     OTHER = "other", "Other"
+
+
+class VerificationStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
 
 
 class BusinessMemberRole(models.TextChoices):
@@ -30,7 +37,19 @@ class BusinessMemberRole(models.TextChoices):
     CASHIER = "cashier", "Cashier"
     INVENTORY_MANAGER = "inventory_manager", "Inventory Manager"
     DELIVERY_MANAGER = "delivery_manager", "Delivery Manager"
+    DELIVERY_RIDER = "delivery_rider", "Delivery Rider"
+    ACCOUNTANT = "accountant", "Accountant"
     SUPPORT = "support", "Support"
+
+
+class BusinessDocumentType(models.TextChoices):
+    CAC_CERTIFICATE = "cac_certificate", "CAC Certificate"
+    TAX_CERTIFICATE = "tax_certificate", "Tax Certificate"
+    BUSINESS_LICENSE = "business_license", "Business License"
+    FOOD_LICENSE = "food_license", "Food License"
+    PHARMACY_LICENSE = "pharmacy_license", "Pharmacy License"
+    INSURANCE = "insurance", "Insurance"
+    OTHER = "other", "Other"
 
 
 class WeekDay(models.IntegerChoices):

@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import Business
+from .models import (
+    Business,
+    Branch,
+    BusinessMember,
+    BusinessHours,
+    BusinessRating,
+    BusinessGallery,
+    RestaurantProfile,
+    DeliveryZone,
+    BusinessVerification,
+    BusinessDocument,
+)
 
 
 @admin.register(Business)
@@ -8,22 +19,44 @@ class BusinessAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "category",
-        "slug",
         "owner",
         "status",
-        "legal_name",
-        "registration_number",
-        "submitted_for_review_at",
-        "verified_at",
+        "business_email",
+        "business_phone",
+        "is_active",
         "created_at",
     )
-    list_filter = ("status", "category")
+
+    list_filter = (
+        "status",
+        "category",
+        "is_active",
+    )
+
     search_fields = (
         "name",
         "slug",
-        "legal_name",
-        "registration_number",
+        "business_email",
+        "business_phone",
         "owner__email",
     )
-    prepopulated_fields = {"slug": ("name",)}
-    readonly_fields = ("submitted_for_review_at", "verified_at", "created_at", "updated_at")
+
+    prepopulated_fields = {
+        "slug": ("name",),
+    }
+
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+    )
+
+
+admin.site.register(Branch)
+admin.site.register(BusinessMember)
+admin.site.register(BusinessHours)
+admin.site.register(BusinessRating)
+admin.site.register(BusinessGallery)
+admin.site.register(RestaurantProfile)
+admin.site.register(DeliveryZone)
+admin.site.register(BusinessVerification)
+admin.site.register(BusinessDocument)
