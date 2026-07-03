@@ -26,6 +26,7 @@ class BusinessRatingSerializer(serializers.ModelSerializer):
 
         read_only_fields = (
             "id",
+            "customer",
             "created_at",
             "updated_at",
         )

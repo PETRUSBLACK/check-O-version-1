@@ -1,4 +1,7 @@
-from .business_viewset import BusinessViewSet
-from .location_views import SetBusinessLocationView, NearbyShopsView, RateBusinessView, BusinessRatingsView
+from .business import BusinessViewSet
+from .branch import BranchViewSet
 
-__all__ = ["BusinessViewSet", "SetBusinessLocationView", "NearbyShopsView", "RateBusinessView", "BusinessRatingsView"]
+__all__ = [
+    "BusinessViewSet",
+    "BranchViewSet",
+]

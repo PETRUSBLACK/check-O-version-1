@@ -4,8 +4,8 @@ from apps.businesses.models import Business
 
 
 class BusinessSerializer(serializers.ModelSerializer):
-    owner_email = serializers.EmailField(
-        source="owner.email",
+    owner_name = serializers.CharField(
+        source="owner.get_full_name",
         read_only=True,
     )
 
@@ -15,7 +15,7 @@ class BusinessSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "owner",
-            "owner_email",
+            "owner_name",
             "name",
             "slug",
             "category",
@@ -35,7 +35,6 @@ class BusinessSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "id",
             "owner",
-            "slug",
             "status",
             "created_at",
             "updated_at",
@@ -46,16 +45,20 @@ class BusinessCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Business
 
-        fields = (
-            "name",
-            "category",
-            "tagline",
-            "description",
-            "logo",
-            "cover_image",
-            "business_email",
-            "business_phone",
-            "website",
+        exclude = (
+            "owner",
+            "status",
+            "slug",
+        )
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+
+        from apps.businesses.services import create_business
+
+        return create_business(
+            owner=user,
+            **validated_data,
         )
 
 
@@ -63,15 +66,16 @@ class BusinessUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Business
 
-        fields = (
-            "name",
-            "category",
-            "tagline",
-            "description",
-            "logo",
-            "cover_image",
-            "business_email",
-            "business_phone",
-            "website",
-            "is_active",
+        exclude = (
+            "owner",
+            "status",
+            "slug",
+        )
+
+    def update(self, instance, validated_data):
+        from apps.businesses.services import update_business
+
+        return update_business(
+            business=instance,
+            **validated_data,
         )
