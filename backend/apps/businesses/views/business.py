@@ -5,14 +5,7 @@ Business API views.
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from apps.businesses.selectors import (
-    get_businesses,
-)
-
-from apps.businesses.services import (
-    create_business,
-    update_business,
-)
+from apps.businesses.selectors import get_businesses
 
 from apps.businesses.serializers import (
     BusinessListSerializer,
@@ -31,9 +24,20 @@ class BusinessViewSet(viewsets.ModelViewSet):
         IsAuthenticated,
     )
 
-    queryset = get_businesses()
+    def get_queryset(self):
+        """
+        Return businesses available to the current request.
+
+        Using a method instead of a class-level queryset makes it
+        easy to add filtering based on the authenticated user,
+        permissions, or query parameters in the future.
+        """
+        return get_businesses()
 
     def get_serializer_class(self):
+        """
+        Return the appropriate serializer for each action.
+        """
 
         if self.action == "list":
             return BusinessListSerializer
@@ -50,13 +54,19 @@ class BusinessViewSet(viewsets.ModelViewSet):
         return BusinessDetailSerializer
 
     def perform_create(self, serializer):
-        create_business(
-            owner=self.request.user,
-            **serializer.validated_data,
-        )
+        """
+        Create a new business.
+
+        The serializer delegates the creation to the
+        create_business() service.
+        """
+        serializer.save()
 
     def perform_update(self, serializer):
-        update_business(
-            serializer.instance,
-            **serializer.validated_data,
-        )
+        """
+        Update an existing business.
+
+        The serializer delegates the update to the
+        update_business() service.
+        """
+        serializer.save()
