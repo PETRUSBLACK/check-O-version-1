@@ -5,6 +5,8 @@ Business API views.
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from apps.businesses.permissions import IsBusinessOwner
+
 from apps.businesses.selectors import get_businesses
 
 from apps.businesses.serializers import (
@@ -53,6 +55,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
 
         return BusinessDetailSerializer
 
+
     def perform_create(self, serializer):
         """
         Create a new business.
@@ -62,6 +65,7 @@ class BusinessViewSet(viewsets.ModelViewSet):
         """
         serializer.save()
 
+
     def perform_update(self, serializer):
         """
         Update an existing business.
@@ -70,3 +74,23 @@ class BusinessViewSet(viewsets.ModelViewSet):
         update_business() service.
         """
         serializer.save()
+
+    def get_permissions(self):
+        """
+        Owners can modify their businesses.
+        Everyone authenticated can list/retrieve.
+        """
+
+        if self.action in (
+            "update",
+            "partial_update",
+            "destroy",
+        ):
+            return [
+                IsAuthenticated(),
+                IsBusinessOwner(),
+            ]
+
+        return [
+            IsAuthenticated(),
+        ]

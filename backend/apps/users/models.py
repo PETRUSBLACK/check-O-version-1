@@ -4,6 +4,7 @@ from django.db import models
 
 class UserRole(models.TextChoices):
     CUSTOMER = "customer", "Customer"
+    VENDOR = "vendor", "Vendor"
     ADMIN = "admin", "Administrator"
 
 
@@ -16,24 +17,64 @@ class UserManager(BaseUserManager):
 
         email = self.normalize_email(email)
 
-        user = self.model(email=email, **extra_fields)
+        extra_fields.setdefault(
+            "role",
+            UserRole.CUSTOMER,
+        )
+
+        user = self.model(
+            email=email,
+            **extra_fields,
+        )
+
         user.set_password(password)
         user.save(using=self._db)
 
         return user
 
+    def create_vendor(self, email, password=None, **extra_fields):
+        extra_fields.setdefault(
+            "role",
+            UserRole.VENDOR,
+        )
+
+        return self.create_user(
+            email=email,
+            password=password,
+            **extra_fields,
+        )
+
     def create_superuser(self, email, password=None, **extra_fields):
-        extra_fields.setdefault("role", UserRole.ADMIN)
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault(
+            "role",
+            UserRole.ADMIN,
+        )
+
+        extra_fields.setdefault(
+            "is_staff",
+            True,
+        )
+
+        extra_fields.setdefault(
+            "is_superuser",
+            True,
+        )
 
         if extra_fields.get("is_staff") is not True:
-            raise ValueError("Superuser must have is_staff=True.")
+            raise ValueError(
+                "Superuser must have is_staff=True."
+            )
 
         if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Superuser must have is_superuser=True.")
+            raise ValueError(
+                "Superuser must have is_superuser=True."
+            )
 
-        return self.create_user(email, password, **extra_fields)
+        return self.create_user(
+            email,
+            password,
+            **extra_fields,
+        )
 
 
 class User(AbstractUser):
@@ -47,6 +88,7 @@ class User(AbstractUser):
         max_length=20,
         choices=UserRole.choices,
         default=UserRole.CUSTOMER,
+        db_index=True,
     )
 
     phone_number = models.CharField(
@@ -67,19 +109,41 @@ class User(AbstractUser):
     objects = UserManager()
 
     USERNAME_FIELD = "email"
+
     REQUIRED_FIELDS = []
 
     class Meta:
         db_table = "users_user"
-        ordering = ["-date_joined"]
+
+        ordering = [
+            "-date_joined",
+        ]
 
     def __str__(self):
         return self.email
 
     @property
+    def is_customer(self):
+        return self.role == UserRole.CUSTOMER
+
+    @property
     def is_vendor(self):
+        return self.role == UserRole.VENDOR
+
+    @property
+    def is_admin(self):
+        return self.role == UserRole.ADMIN
+
+    @property
+    def businesses_owned(self):
         """
-        A user is considered a vendor if they own or manage
-        at least one business.
+        Businesses where this user is the owner.
         """
-        return self.businesses.exists()
+        return self.businesses.filter(owner=self)
+
+    @property
+    def business_memberships(self):
+        """
+        Businesses the user belongs to.
+        """
+        return self.business_members.all()

@@ -1,20 +1,4 @@
 from .business import (
-    BusinessSerializer,
-    BusinessCreateSerializer,
-    BusinessUpdateSerializer,
-)
-
-from .branch import BranchSerializer
-from .member import BusinessMemberSerializer
-from .hours import BusinessHoursSerializer
-from .gallery import BusinessGallerySerializer
-from .rating import BusinessRatingSerializer
-from .restaurant import RestaurantProfileSerializer
-from .delivery import DeliveryZoneSerializer
-from .verification import BusinessVerificationSerializer
-from .document import BusinessDocumentSerializer
-
-from .business import (
     BusinessListSerializer,
     BusinessDetailSerializer,
     BusinessCreateSerializer,
@@ -27,3 +11,18 @@ from .branch import (
     BranchCreateSerializer,
     BranchUpdateSerializer,
 )
+
+from .member import (
+    BusinessMemberListSerializer,
+    BusinessMemberDetailSerializer,
+    BusinessMemberCreateSerializer,
+    BusinessMemberUpdateSerializer,
+)
+
+from .hours import BusinessHoursSerializer
+from .gallery import BusinessGallerySerializer
+from .rating import BusinessRatingSerializer
+from .restaurant import RestaurantProfileSerializer
+from .delivery import DeliveryZoneSerializer
+from .verification import BusinessVerificationSerializer
+from .document import BusinessDocumentSerializer

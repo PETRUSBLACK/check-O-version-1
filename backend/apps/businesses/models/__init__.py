@@ -8,3 +8,4 @@ from .restaurant import RestaurantProfile
 from .delivery import DeliveryZone
 from .verification import BusinessVerification
 from .documents import BusinessDocument
+from .location import BusinessLocation

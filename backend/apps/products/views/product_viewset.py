@@ -3,11 +3,13 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.businesses.models import Business, BusinessStatus
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessStatus
 from core.permissions import IsVendorOrAdmin
 from apps.products.models import Product
 from apps.products.serializers import ProductSerializer
 from apps.products.services.catalog import create_product
+
 
 
 @extend_schema_view(

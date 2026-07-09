@@ -1,8 +1,11 @@
 from django.db import transaction
 from django.utils import timezone
 
-from apps.businesses.models import Business, BusinessCategory, BusinessStatus
-
+from apps.businesses.models import Business
+from apps.businesses.choices import (
+    BusinessCategory,
+    BusinessStatus,
+)
 
 def register_business(
     *,
