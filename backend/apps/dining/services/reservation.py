@@ -3,7 +3,8 @@ import datetime
 from django.db import transaction
 from django.utils import timezone
 
-from apps.businesses.models import Business, BusinessCategory
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessCategory
 from apps.dining.models import Reservation, ReservationStatus
 
 

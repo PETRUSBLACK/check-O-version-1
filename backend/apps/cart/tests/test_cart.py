@@ -2,7 +2,9 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.businesses.models import Business, BusinessStatus
+
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessCategory
 from apps.cart.models import Cart, CartItem
 from apps.cart.services.cart_service import CartError, add_to_cart, checkout, get_or_create_cart
 from apps.orders.models import Order

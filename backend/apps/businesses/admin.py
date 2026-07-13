@@ -116,13 +116,14 @@ class BusinessMemberAdmin(admin.ModelAdmin):
         "business",
         "branch",
         "role",
+        "status",
         "is_active",
         "joined_at",
     )
 
     list_filter = (
         "role",
-        "is_active",
+        "status",
     )
 
     search_fields = (
@@ -142,7 +143,6 @@ class BusinessMemberAdmin(admin.ModelAdmin):
         "business",
         "branch",
     )
-
 
 # =========================================================
 # Business Hours

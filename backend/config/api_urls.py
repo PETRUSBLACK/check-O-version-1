@@ -36,8 +36,11 @@ from apps.businesses.views import (
     BusinessViewSet,
     BranchViewSet,
     BusinessMemberViewSet,
+    SetBusinessLocationView,
+    NearbyShopsView,
+    RateBusinessView,
+    BusinessRatingsView,
 )
-
 # ============================================================================
 # Products
 # ============================================================================

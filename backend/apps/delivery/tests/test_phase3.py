@@ -4,8 +4,13 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from apps.businesses.models import Business, BusinessLocation, BusinessRating, BusinessStatus
-from apps.cart.services.cart_service import add_to_cart, checkout
+from apps.businesses.models import (
+    Business,
+    BusinessLocation,
+    BusinessRating,
+)
+
+from apps.businesses.choices import BusinessStatus
 from apps.delivery.models import Shipment, ShipmentStatus, TrackingEvent
 from apps.delivery.services.shipment_service import create_shipment, update_shipment_status
 from apps.orders.models import Order, OrderStatus, FulfilmentType

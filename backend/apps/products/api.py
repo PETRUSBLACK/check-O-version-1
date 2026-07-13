@@ -2,7 +2,8 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.businesses.models import Business, BusinessStatus
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessStatus
 from core.permissions import IsVendorOrAdmin
 
 from .models import Product

@@ -4,7 +4,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.businesses.models import Business, BusinessStatus
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessCategory
 from apps.subscriptions.models import SubscriptionPlan, SubscriptionStatus, VendorSubscription, PlanTier
 from apps.subscriptions.services.subscription_service import (
     subscribe, activate_subscription, cancel_subscription,

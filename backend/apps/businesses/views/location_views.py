@@ -6,7 +6,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
-from apps.businesses.models import Business, BusinessLocation, BusinessRating, BusinessStatus
+from apps.businesses.models import (
+    Business,
+    BusinessLocation,
+    BusinessRating,
+)
+
+from apps.businesses.choices import BusinessStatus
 from core.permissions import IsCustomer, IsVendor
 
 

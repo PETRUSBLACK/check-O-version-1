@@ -20,7 +20,9 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.ai_assistant.models import AIConversation, AssistantType
-from apps.businesses.models import Business, BusinessLocation, BusinessStatus
+
+from apps.businesses.models import Business
+from apps.businesses.choices import BusinessCategory
 from apps.cart.services.cart_service import add_to_cart, checkout
 from apps.orders.models import Order, OrderStatus
 from apps.payments.models import Payment, PaymentStatus
