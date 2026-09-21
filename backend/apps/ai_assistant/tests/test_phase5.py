@@ -135,6 +135,7 @@ class AIConversationModelTest(TestCase):
 
 # ─── Customer Chat API Tests ───────────────────────────────────────────────────
 
+@patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"})
 class CustomerChatAPITest(TestCase):
 
     def setUp(self):

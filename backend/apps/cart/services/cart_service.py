@@ -7,6 +7,7 @@ from apps.businesses.models import Business
 from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.cart.models import Cart, CartItem
 from apps.orders.models import Order, OrderItem, OrderStatus
+from apps.orders.services.stock_service import release_expired_holds, reserve_stock
 from apps.products.models import Product
 
 
@@ -31,6 +32,9 @@ def add_to_cart(*, customer, product_id: UUID, quantity: int = 1) -> CartItem:
     """
     if quantity < 1:
         raise CartError("Quantity must be at least 1.")
+
+    # Free up stock held by unpaid orders whose payment window has passed
+    release_expired_holds(product_ids=[product_id])
 
     product = Product.objects.select_related("business").filter(pk=product_id).first()
     if not product:
@@ -122,6 +126,9 @@ def checkout(*, customer) -> Order:
     - If product uses channel allocation → deduct from smartmall_allocation
     - If product uses main stock → deduct from stock
     This ensures physical store stock is never accidentally reduced by SmartMall orders.
+
+    The stock is held for 30 minutes. If the order is not paid in that time it is
+    cancelled and the stock goes back to the same bucket.
     """
     cart = Cart.objects.prefetch_related(
         "items__product__business"
@@ -129,6 +136,9 @@ def checkout(*, customer) -> Order:
 
     if not cart or not cart.items.exists():
         raise CartError("Your cart is empty.")
+
+    # Free up stock held by unpaid orders whose payment window has passed
+    release_expired_holds(product_ids=list(cart.items.values_list("product_id", flat=True)))
 
     items = list(cart.items.select_related("product__business").all())
 
@@ -154,9 +164,14 @@ def checkout(*, customer) -> Order:
 
     total = Decimal("0.00")
 
-    # --- Deduct stock and create order lines ---
+    # --- Hold stock (30-minute payment window) and create order lines ---
     for item in items:
         product = Product.objects.select_for_update().get(pk=item.product_id)
+        if item.quantity > product.available_stock:
+            raise CartError(
+                f"Insufficient stock for '{product.name}'. "
+                f"Requested {item.quantity}, available {product.available_stock}."
+            )
         line_total = product.price * item.quantity
 
         OrderItem.objects.create(
@@ -168,18 +183,9 @@ def checkout(*, customer) -> Order:
 
         total += line_total
 
-        # Deduct from the correct stock field
-        if product.uses_channel_allocation:
-            # Vendor has multiple channels — only reduce SmartMall allocation
-            # This does NOT affect their physical store stock
-            product.smartmall_allocation = max(
-                0, product.smartmall_allocation - item.quantity
-            )
-            product.save(update_fields=["smartmall_allocation", "updated_at"])
-        else:
-            # Standard vendor — reduce main stock
-            product.stock = max(0, product.stock - item.quantity)
-            product.save(update_fields=["stock", "updated_at"])
+        # Hold the units from the correct bucket (SmartMall allocation or main
+        # stock). Released automatically if unpaid after 30 minutes.
+        reserve_stock(order=order, product=product, quantity=item.quantity)
 
     order.total = total
     order.save(update_fields=["total", "updated_at"])

@@ -30,6 +30,27 @@ class FulfilmentType(models.TextChoices):
     PICKUP = "pickup", "Pick Up In Store"
 
 
+class CancelledBy(models.TextChoices):
+    CUSTOMER = "customer", "Customer"
+    VENDOR = "vendor", "Vendor"
+    ADMIN = "admin", "Admin"
+    SYSTEM = "system", "System"
+
+
+class CancellationReason(models.TextChoices):
+    CUSTOMER_REQUEST = "customer_request", "Customer changed their mind"
+    OUT_OF_STOCK = "out_of_stock", "Out of stock"
+    ITEM_DAMAGED = "item_damaged", "Item damaged"
+    PAYMENT_TIMEOUT = "payment_timeout", "Not paid within the payment window"
+    OTHER = "other", "Other"
+
+
+class RefundStatus(models.TextChoices):
+    NONE = "none", "No refund needed"
+    DUE = "due", "Refund due"
+    REFUNDED = "refunded", "Refunded"
+
+
 def _generate_pickup_code():
     return "SM-" + "".join(random.choices(string.digits, k=4))
 
@@ -58,6 +79,31 @@ class Order(UUIDTimeStampedModel):
     # Pickup fields
     pickup_code = models.CharField(max_length=10, blank=True)
     pickup_deadline = models.DateTimeField(null=True, blank=True)
+
+    # Payment / vendor follow-up
+    paid_at = models.DateTimeField(null=True, blank=True)
+    vendor_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+
+    # Cancellation
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.CharField(max_length=20, choices=CancelledBy.choices, blank=True)
+    cancelled_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_orders",
+    )
+    cancellation_reason = models.CharField(max_length=30, choices=CancellationReason.choices, blank=True)
+    cancellation_note = models.TextField(blank=True)
+
+    # Refunds are processed manually in the Paystack dashboard, then ticked off in admin
+    refund_status = models.CharField(
+        max_length=20,
+        choices=RefundStatus.choices,
+        default=RefundStatus.NONE,
+    )
+    refunded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "orders_order"
@@ -91,14 +137,27 @@ class OrderItem(UUIDTimeStampedModel):
         return self.unit_price * self.quantity
 
 
+class StockSource(models.TextChoices):
+    ALLOCATION = "allocation", "SmartMall allocation"
+    STOCK = "stock", "Main stock"
+
+
 class StockReservation(UUIDTimeStampedModel):
     """
-    Reserves stock at checkout — permanently deducted only on payment confirmation.
-    Expires if payment is not received within the window.
+    Stock held for an order at checkout.
+    - confirmed=True once payment succeeds (the units are sold).
+    - released=True once the units have been returned to `source`
+      (unpaid in time, cancelled, or pickup expired).
     """
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="reservations")
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="reservations")
     quantity = models.PositiveIntegerField()
+    source = models.CharField(
+        max_length=20,
+        choices=StockSource.choices,
+        default=StockSource.STOCK,
+        help_text="Which stock bucket the units were taken from, so they go back to the same place.",
+    )
     expires_at = models.DateTimeField()
     confirmed = models.BooleanField(default=False)
     released = models.BooleanField(default=False)
@@ -108,3 +167,12 @@ class StockReservation(UUIDTimeStampedModel):
 
     def is_expired(self):
         return not self.confirmed and not self.released and timezone.now() > self.expires_at
+
+
+class RefundQueue(Order):
+    """Admin-only view of paid orders that were cancelled and still need a refund."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Refund to process"
+        verbose_name_plural = "Refunds to process"

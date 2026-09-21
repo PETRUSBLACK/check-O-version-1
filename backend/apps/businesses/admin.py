@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db.models import Count, Q
 
 from .models import (
     Business,
@@ -26,6 +27,7 @@ class BusinessAdmin(admin.ModelAdmin):
         "owner",
         "status",
         "is_active",
+        "vendor_cancellations",
         "created_at",
     )
 
@@ -34,6 +36,20 @@ class BusinessAdmin(admin.ModelAdmin):
         "status",
         "is_active",
     )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            _vendor_cancellations=Count(
+                "products__orderitem__order",
+                filter=Q(products__orderitem__order__cancelled_by="vendor"),
+                distinct=True,
+            )
+        )
+
+    @admin.display(description="Vendor cancellations", ordering="_vendor_cancellations")
+    def vendor_cancellations(self, obj):
+        """Orders this shop cancelled itself (out of stock, damaged, other)."""
+        return obj._vendor_cancellations
 
     search_fields = (
         "name",

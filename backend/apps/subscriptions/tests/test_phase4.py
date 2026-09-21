@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.businesses.models import Business
-from apps.businesses.choices import BusinessCategory
+from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.subscriptions.models import SubscriptionPlan, SubscriptionStatus, VendorSubscription, PlanTier
 from apps.subscriptions.services.subscription_service import (
     subscribe, activate_subscription, cancel_subscription,
@@ -52,7 +52,7 @@ def make_free_plan():
 
 def make_product(business, name="Widget", stock=10):
     return Product.objects.create(
-        business=business, name=name, price="100.00", stock=stock, is_active=True,
+        business=business, name=name, price=Decimal("100.00"), stock=stock, is_active=True,
     )
 
 

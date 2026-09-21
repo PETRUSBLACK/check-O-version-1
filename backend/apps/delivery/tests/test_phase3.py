@@ -12,6 +12,7 @@ from apps.businesses.models import (
 
 from apps.businesses.choices import BusinessStatus
 from apps.delivery.models import Shipment, ShipmentStatus, TrackingEvent
+from apps.cart.services.cart_service import add_to_cart, checkout
 from apps.delivery.services.shipment_service import create_shipment, update_shipment_status
 from apps.orders.models import Order, OrderStatus, FulfilmentType
 from apps.orders.services.order_service import expire_pickup_order, transition_order_status
@@ -129,6 +130,26 @@ class ShipmentServiceTest(TestCase):
         update_shipment_status(shipment_id=shipment.pk, status="delivered")
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, OrderStatus.DELIVERED)
+
+    def test_order_status_follows_shipment_steps(self):
+        shipment = create_shipment(order_id=self.order.pk, mode="vendor_managed")
+        expected = [
+            ("processing", OrderStatus.PROCESSING),
+            ("packaging", OrderStatus.PACKAGING),
+            ("pickup", OrderStatus.SHIPPED),
+            ("in_transit", OrderStatus.SHIPPED),
+        ]
+        for shipment_status, order_status in expected:
+            update_shipment_status(shipment_id=shipment.pk, status=shipment_status)
+            self.order.refresh_from_db()
+            self.assertEqual(self.order.status, order_status)
+
+    def test_cancelled_order_is_not_moved_by_shipment(self):
+        shipment = create_shipment(order_id=self.order.pk, mode="vendor_managed")
+        Order.objects.filter(pk=self.order.pk).update(status=OrderStatus.CANCELLED)
+        update_shipment_status(shipment_id=shipment.pk, status="processing")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, OrderStatus.CANCELLED)
 
 
 class TrackingAPITest(TestCase):
@@ -284,6 +305,7 @@ class PickupFlowTest(TestCase):
         order.generate_pickup_code()
         order.pickup_deadline = timezone.now() - timezone.timedelta(hours=1)
         order.save()
+        self.product.refresh_from_db()  # checkout already reduced stock
         stock_before = self.product.stock
         expire_pickup_order(order_id=order.pk)
         self.product.refresh_from_db()

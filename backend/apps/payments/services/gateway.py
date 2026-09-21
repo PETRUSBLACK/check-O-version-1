@@ -15,7 +15,7 @@ from uuid import UUID
 from django.db import transaction
 
 from apps.orders.models import Order, OrderStatus
-from apps.orders.services.order_service import OrderFlowError, transition_order_status
+from apps.orders.services.order_service import OrderFlowError, mark_order_paid
 from apps.payments.models import Payment, PaymentProvider, PaymentStatus
 from .registry import get_gateway
 
@@ -49,6 +49,9 @@ def initiate_payment(
 
     if Payment.objects.filter(order_id=order_id, status=PaymentStatus.SUCCESS).exists():
         raise ValueError("This order has already been paid.")
+
+    if order.status != OrderStatus.PENDING_PAYMENT.value:
+        raise ValueError("This order is no longer awaiting payment.")
 
     gateway = get_gateway(provider)
 
@@ -126,7 +129,7 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
     payment.save(update_fields=["status", "updated_at"])
 
     try:
-        transition_order_status(order_id=payment.order_id, to_status=OrderStatus.PAID.value)
+        mark_order_paid(order_id=payment.order_id)
     except OrderFlowError as exc:
         logger.error("order_transition_failed after payment order=%s error=%s", payment.order_id, exc)
 
@@ -184,5 +187,5 @@ def confirm_payment_success(*, payment_id: UUID) -> Payment:
         raise ValueError("Cannot confirm a failed payment.")
     payment.status = PaymentStatus.SUCCESS
     payment.save(update_fields=["status", "updated_at"])
-    transition_order_status(order_id=payment.order_id, to_status=OrderStatus.PAID.value)
+    mark_order_paid(order_id=payment.order_id)
     return payment

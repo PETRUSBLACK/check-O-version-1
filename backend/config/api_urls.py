@@ -67,6 +67,7 @@ from apps.orders.views import (
     OrderStatusView,
     MarkReadyForPickupView,
     ConfirmPickupView,
+    CancelOrderView,
 )
 
 # ============================================================================
@@ -392,6 +393,7 @@ urlpatterns = [
     path("orders/<uuid:pk>/transition/", OrderStatusView.as_view(), name="order-transition"),
     path("orders/<uuid:pk>/ready-for-pickup/", MarkReadyForPickupView.as_view(), name="order-ready"),
     path("orders/<uuid:pk>/confirm-pickup/", ConfirmPickupView.as_view(), name="order-confirm-pickup"),
+    path("orders/<uuid:pk>/cancel/", CancelOrderView.as_view(), name="order-cancel"),
 
     # Payments
     path("payments/initiate/", InitiatePaymentView.as_view(), name="payment-initiate"),

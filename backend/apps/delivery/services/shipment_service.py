@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from django.db import transaction
@@ -7,8 +8,31 @@ from apps.delivery.providers import LogisticsPartnerProvider, VendorDeliveryProv
 from apps.orders.models import Order, OrderStatus
 
 
+logger = logging.getLogger(__name__)
+
+
 class ShipmentError(Exception):
     pass
+
+
+# Which order status each shipment status corresponds to.
+# "pickup" means the rider has collected the parcel from the vendor.
+_SHIPMENT_TO_ORDER_STATUS = {
+    ShipmentStatus.PROCESSING.value: OrderStatus.PROCESSING.value,
+    ShipmentStatus.PACKAGING.value: OrderStatus.PACKAGING.value,
+    ShipmentStatus.PICKUP.value: OrderStatus.SHIPPED.value,
+    ShipmentStatus.IN_TRANSIT.value: OrderStatus.SHIPPED.value,
+    ShipmentStatus.DELIVERED.value: OrderStatus.DELIVERED.value,
+}
+
+# The order's delivery path, in sequence.
+_ORDER_DELIVERY_PATH = [
+    OrderStatus.PAID.value,
+    OrderStatus.PROCESSING.value,
+    OrderStatus.PACKAGING.value,
+    OrderStatus.SHIPPED.value,
+    OrderStatus.DELIVERED.value,
+]
 
 
 _ALLOWED_TRANSITIONS = {
@@ -95,12 +119,41 @@ def update_shipment_status(*, shipment_id: UUID, status: str, note: str = "", lo
     from apps.notifications.services.notification_service import notify_shipment_updated
     notify_shipment_updated(shipment=shipment)
 
-    # Auto-mark order delivered when shipment delivered
-    if status == ShipmentStatus.DELIVERED.value:
-        from apps.orders.services.order_service import OrderFlowError, transition_order_status
-        try:
-            transition_order_status(order_id=shipment.order_id, to_status=OrderStatus.DELIVERED.value)
-        except OrderFlowError:
-            pass
+    # Keep the order status in step with the shipment
+    _sync_order_with_shipment(order_id=shipment.order_id, shipment_status=status)
 
     return shipment
+
+
+def _sync_order_with_shipment(*, order_id: UUID, shipment_status: str) -> None:
+    """
+    Move the order forward along its delivery path until it matches the
+    shipment. Each step goes through transition_order_status, so the order
+    rules and customer notifications still apply. Never moves an order backwards.
+    """
+    from apps.orders.services.order_service import OrderFlowError, transition_order_status
+
+    target = _SHIPMENT_TO_ORDER_STATUS.get(shipment_status)
+    if not target:
+        return
+
+    order = Order.objects.get(pk=order_id)
+    if order.status not in _ORDER_DELIVERY_PATH:
+        # e.g. cancelled or a pickup order — leave it alone
+        logger.warning(
+            "shipment_order_sync_skipped order=%s order_status=%s shipment_status=%s",
+            order_id, order.status, shipment_status,
+        )
+        return
+
+    current_index = _ORDER_DELIVERY_PATH.index(order.status)
+    target_index = _ORDER_DELIVERY_PATH.index(target)
+    for next_status in _ORDER_DELIVERY_PATH[current_index + 1:target_index + 1]:
+        try:
+            transition_order_status(order_id=order_id, to_status=next_status)
+        except OrderFlowError as exc:
+            logger.warning(
+                "shipment_order_sync_failed order=%s to=%s error=%s",
+                order_id, next_status, exc,
+            )
+            return

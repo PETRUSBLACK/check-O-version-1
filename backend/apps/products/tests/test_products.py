@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.businesses.models import Business
-from apps.businesses.choices import BusinessCategory
+from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.products.models import Product
 from apps.users.models import User, UserRole
 
@@ -50,7 +50,7 @@ class ProductModelTest(TestCase):
         vendor = make_vendor()
         business = make_business(vendor)
         product = make_product(business, name="Test Widget")
-        self.assertEqual(str(product), "Test Widget")
+        self.assertEqual(str(product), "Test Widget (Test Shop)")
 
 
 class ProductCreateTest(TestCase):
@@ -188,7 +188,8 @@ class ProductUpdateDeleteTest(TestCase):
             {"name": "Stolen"},
             format="json",
         )
-        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        # Other vendors' products are hidden from this vendor, so 404 (not 403)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_vendor_can_delete_own_product(self):
         vendor = make_vendor()
@@ -206,5 +207,6 @@ class ProductUpdateDeleteTest(TestCase):
         product = make_product(biz2)
         self.client.force_authenticate(vendor1)
         res = self.client.delete(f"/api/products/{product.pk}/")
-        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        # Other vendors' products are hidden from this vendor, so 404 (not 403)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())

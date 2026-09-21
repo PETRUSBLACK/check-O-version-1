@@ -8,7 +8,12 @@ from drf_spectacular.utils import extend_schema
 
 from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.orders.serializers import OrderSerializer
-from apps.orders.services.order_service import OrderFlowError, transition_order_status
+from apps.orders.services.order_service import (
+    OrderFlowError,
+    OrderPermissionError,
+    cancel_order,
+    transition_order_status,
+)
 
 
 _VENDOR_TRANSITION_TARGETS = {
@@ -38,6 +43,21 @@ class OrderStatusView(APIView):
         order = Order.objects.filter(pk=pk).first()
         if not order:
             return Response({"detail": "Order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Cancellations follow the cancel rules (same as POST /orders/{id}/cancel/)
+        if to_status == OrderStatus.CANCELLED.value:
+            try:
+                order = cancel_order(
+                    order_id=order.pk,
+                    user=request.user,
+                    reason=request.data.get("reason", ""),
+                    note=request.data.get("note", ""),
+                )
+            except OrderPermissionError as e:
+                return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+            except OrderFlowError as e:
+                return Response({"detail": str(e)}, status=400)
+            return Response(OrderSerializer(order).data)
 
         role = getattr(request.user, "role", None)
         is_admin = bool(request.user.is_staff or role == "admin")

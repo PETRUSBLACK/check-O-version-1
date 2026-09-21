@@ -1,3 +1,3 @@
-from .notification_consumer import NotificationConsumer
+from .notification_consumer import UserNotifyConsumer
 
-__all__ = ["NotificationConsumer"]
+__all__ = ["UserNotifyConsumer"]

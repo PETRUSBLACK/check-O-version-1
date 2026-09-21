@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.businesses.models import Business
-from apps.businesses.choices import BusinessCategory
+from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.cart.services.cart_service import add_to_cart, checkout
 from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.orders.services.order_service import OrderFlowError, transition_order_status

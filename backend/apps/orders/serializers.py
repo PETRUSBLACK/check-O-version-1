@@ -17,8 +17,14 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ("id", "customer", "status", "total", "items", "created_at", "updated_at")
-        read_only_fields = ("id", "customer", "status", "total", "created_at", "updated_at")
+        fields = (
+            "id", "customer", "status", "total", "items",
+            "fulfilment_type", "paid_at",
+            "cancelled_at", "cancelled_by", "cancellation_reason", "cancellation_note",
+            "refund_status",
+            "created_at", "updated_at",
+        )
+        read_only_fields = fields
 
 
 class OrderLineWriteSerializer(serializers.Serializer):

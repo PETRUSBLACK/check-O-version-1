@@ -12,7 +12,13 @@ Or schedule via cron:
     # Run every hour
     0 * * * * cd /app && python manage.py run_tasks
 
+Run with:  python manage.py run_tasks --scheduled   (every 5 minutes, one cron job)
+That runs the "frequent" tasks every time, the hourly tasks once an hour and
+the daily tasks once a day. See core/management/commands/run_tasks.py.
+
 Task schedule:
+    expire_unpaid_orders       → every 5 minutes (30-minute payment window)
+    remind_vendors_waiting     → every 5 minutes (paid orders untouched for 2 hours)
     expire_pickup_orders       → every 5 minutes
     renew_subscriptions        → daily at midnight
     deactivate_expired_promos  → every hour
@@ -158,6 +164,78 @@ def expire_unconfirmed_subscriptions():
     count = expired.update(status=SubscriptionStatus.EXPIRED)
     logger.info("task_expire_unconfirmed_subscriptions expired=%d", count)
     return count
+
+
+def expire_unpaid_orders():
+    """
+    Cancel orders not paid within the 30-minute payment window and return
+    their stock to the bucket it came from.
+    Run every 5 minutes.
+    """
+    from apps.orders.services.stock_service import release_expired_holds
+
+    count = release_expired_holds()
+    logger.info("task_expire_unpaid_orders cancelled=%d", count)
+    return count
+
+
+VENDOR_REMINDER_AFTER_HOURS = 2
+
+
+def remind_vendors_waiting():
+    """
+    Remind vendors about paid orders they have not started on after 2 hours.
+    Each order triggers at most one reminder. Orders are NOT auto-cancelled.
+    Run every 5 minutes.
+    """
+    from django.utils import timezone
+    from apps.businesses.models import Business
+    from apps.orders.models import Order, OrderStatus
+    from apps.notifications.services.notification_service import notify
+
+    cutoff = timezone.now() - timezone.timedelta(hours=VENDOR_REMINDER_AFTER_HOURS)
+    waiting = Order.objects.filter(
+        status=OrderStatus.PAID,
+        paid_at__lte=cutoff,
+        vendor_reminder_sent_at__isnull=True,
+    )
+
+    sent = 0
+    for order in waiting:
+        owners = {
+            b.owner
+            for b in Business.objects.filter(products__orderitem__order=order)
+            .select_related("owner")
+            .distinct()
+        }
+        for owner in owners:
+            try:
+                notify(
+                    user=owner,
+                    title="An order is waiting for you",
+                    body=(
+                        f"Order {str(order.pk)[:8]} was paid over "
+                        f"{VENDOR_REMINDER_AFTER_HOURS} hours ago. "
+                        "Please start processing it, or cancel it with a reason."
+                    ),
+                    event_type="order.vendor_reminder",
+                    payload={"order_id": str(order.pk)},
+                )
+                sent += 1
+            except Exception as exc:
+                logger.error("task_vendor_reminder_failed order=%s error=%s", order.pk, exc)
+        order.vendor_reminder_sent_at = timezone.now()
+        order.save(update_fields=["vendor_reminder_sent_at", "updated_at"])
+
+    logger.info("task_remind_vendors_waiting sent=%d", sent)
+    return sent
+
+
+def run_all_frequent_tasks():
+    """Run all tasks that should execute every 5 minutes."""
+    expire_unpaid_orders()
+    remind_vendors_waiting()
+    expire_pickup_orders()
 
 
 def run_all_hourly_tasks():
