@@ -5,15 +5,86 @@ Allows vendors to set a dedicated SmartMall stock allocation
 for products they sell across multiple channels.
 """
 
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework import permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema
 
-from apps.products.models import Product
-from apps.products.serializers import ProductSerializer
+from apps.products.models import InventoryMovement, Product
+from apps.products.serializers import InventoryMovementSerializer, ProductSerializer
 from core.permissions import IsVendorOrAdmin
+
+
+@extend_schema_view(
+    list=extend_schema(tags=["products"], summary="List inventory movements"),
+    retrieve=extend_schema(tags=["products"], summary="Get inventory movement"),
+    create=extend_schema(tags=["products"], summary="Create inventory movement"),
+    update=extend_schema(tags=["products"], summary="Update inventory movement"),
+    partial_update=extend_schema(tags=["products"], summary="Partially update inventory movement"),
+    destroy=extend_schema(tags=["products"], summary="Delete inventory movement"),
+)
+class InventoryMovementViewSet(viewsets.ModelViewSet):
+    """CRUD for product inventory movements."""
+
+    queryset = InventoryMovement.objects.select_related("product", "product__business")
+    serializer_class = InventoryMovementSerializer
+    filterset_fields = ("product", "movement_type")
+    search_fields = ("note", "product__name")
+    ordering_fields = ("quantity", "created_at")
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [permissions.IsAuthenticated(), IsVendorOrAdmin()]
+        return [permissions.AllowAny()]
+
+    def get_queryset(self):
+        qs = InventoryMovement.objects.select_related("product", "product__business")
+        user = self.request.user
+        if user.is_authenticated and (user.is_staff or getattr(user, "role", None) == "admin"):
+            return qs.all()
+        if user.is_authenticated and getattr(user, "role", None) == "vendor":
+            return qs.filter(product__business__owner=user)
+        return qs.none()
+
+    def perform_create(self, serializer):
+        product = serializer.validated_data["product"]
+        user = self.request.user
+
+        if (
+            not user.is_staff
+            and getattr(user, "role", None) != "admin"
+            and product.business.owner_id != user.id
+        ):
+            raise PermissionDenied("You do not own this product.")
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        movement = self.get_object()
+        user = self.request.user
+
+        if (
+            not user.is_staff
+            and getattr(user, "role", None) != "admin"
+            and movement.product.business.owner_id != user.id
+        ):
+            raise PermissionDenied("You do not own this product.")
+
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        user = self.request.user
+
+        if (
+            not user.is_staff
+            and getattr(user, "role", None) != "admin"
+            and instance.product.business.owner_id != user.id
+        ):
+            raise PermissionDenied("You do not own this product.")
+
+        instance.delete()
 
 
 class SetChannelAllocationView(APIView):

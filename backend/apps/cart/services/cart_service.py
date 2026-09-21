@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import transaction
 
 from apps.businesses.models import Business
-from apps.businesses.choices import BusinessCategory
+from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.cart.models import Cart, CartItem
 from apps.orders.models import Order, OrderItem, OrderStatus
 from apps.products.models import Product

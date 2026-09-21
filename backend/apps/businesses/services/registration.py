@@ -45,15 +45,6 @@ def submit_business_for_review(*, business_id) -> Business:
         raise BusinessFlowError(
             "Only draft or rejected businesses can be submitted for review."
         )
-    missing = []
-    if not business.legal_name.strip():
-        missing.append("legal_name")
-    if not business.registration_number.strip():
-        missing.append("registration_number")
-    if not business.address.strip():
-        missing.append("address")
-    if missing:
-        raise BusinessFlowError(f"Missing required fields: {', '.join(missing)}")
     business.status = BusinessStatus.PENDING
     business.submitted_for_review_at = timezone.now()
     business.rejection_reason = ""

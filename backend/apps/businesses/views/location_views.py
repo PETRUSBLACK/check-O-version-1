@@ -17,6 +17,9 @@ from core.permissions import IsCustomer, IsVendor
 
 
 class BusinessLocationSerializer(serializers.ModelSerializer):
+    # API keeps the `full_address` name; the model field is `address`.
+    full_address = serializers.CharField(source="address")
+
     class Meta:
         model = BusinessLocation
         fields = ("id", "latitude", "longitude", "city", "state", "country", "full_address")
@@ -127,7 +130,7 @@ class NearbyShopsView(APIView):
                     "name": business.name,
                     "category": business.category,
                     "category_display": business.get_category_display(),
-                    "address": loc.full_address,
+                    "address": loc.address,
                     "city": loc.city,
                     "state": loc.state,
                     "latitude": float(loc.latitude),

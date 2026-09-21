@@ -1,9 +1,12 @@
 from django.test import TestCase
+from django.urls import resolve
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from config import api_urls
+
 from apps.businesses.models import Business
-from apps.businesses.choices import BusinessCategory
+from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.users.models import User, UserRole
 
 
@@ -15,13 +18,12 @@ def make_vendor(email="vendor@example.com"):
     return make_user(email, role=UserRole.VENDOR)
 
 
-def make_business(owner, name="Test Shop", slug="test-shop", status=BusinessStatus.DRAFT):
+def make_business(owner, name="Test Shop", slug="test-shop", status=BusinessStatus.DRAFT, category=BusinessCategory.RESTAURANT):
     return Business.objects.create(
         owner=owner,
         name=name,
         slug=slug,
-        legal_name="Test Shop Ltd",
-        registration_number="RC1234567",
+        category=category,
         status=status,
     )
 
@@ -55,19 +57,26 @@ class BusinessCreateTest(TestCase):
         self.client.force_authenticate(vendor)
         res = self.client.post("/api/businesses/", {
             "name": "My Shop",
+            "category": BusinessCategory.RETAIL,
             "slug": "my-shop",
-            "legal_name": "My Shop Ltd",
-            "registration_number": "RC9876543",
-            "address": "1 Lagos Street",
+            "tagline": "Fresh products",
+            "description": "A retail store",
         }, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertIn("id", res.data)
         self.assertEqual(Business.objects.filter(owner=vendor).count(), 1)
+
+    def test_dining_routes_are_registered(self):
+        route_names = {pattern.name for pattern in api_urls.urlpatterns if getattr(pattern, "name", None)}
+        self.assertIn("dining-menu", route_names)
+        self.assertIn("dining-make-reservation", route_names)
 
     def test_customer_cannot_create_business(self):
         customer = make_user("cust@example.com", role=UserRole.CUSTOMER)
         self.client.force_authenticate(customer)
         res = self.client.post("/api/businesses/", {
             "name": "My Shop",
+            "category": BusinessCategory.RETAIL,
             "slug": "my-shop",
         }, format="json")
         self.assertIn(res.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_400_BAD_REQUEST])
@@ -82,9 +91,8 @@ class BusinessCreateTest(TestCase):
         self.client.force_authenticate(vendor)
         res = self.client.post("/api/businesses/", {
             "name": "Another Shop",
+            "category": BusinessCategory.RETAIL,
             "slug": "my-shop",
-            "legal_name": "Another Ltd",
-            "registration_number": "RC0000001",
         }, format="json")
         self.assertNotEqual(res.status_code, status.HTTP_201_CREATED)
 
