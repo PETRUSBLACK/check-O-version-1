@@ -8,6 +8,7 @@ Required env vars:
     FLUTTERWAVE_SECRET_KEY  — FLWSECK_TEST-xxx (test) or FLWSECK-xxx (production)
 """
 
+import secrets
 import hashlib
 import hmac
 import logging
@@ -39,7 +40,8 @@ class FlutterwaveGateway(BaseGateway):
         Create a Flutterwave payment link.
         Amount is in the base currency unit (Naira for NGN).
         """
-        tx_ref = f"SM-{order_id}"
+        # Unique per attempt, so a customer can retry a failed/abandoned payment
+        tx_ref = f"SM-{order_id}-{secrets.token_hex(3)}"
 
         payload = {
             "tx_ref": tx_ref,

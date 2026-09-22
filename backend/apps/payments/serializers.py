@@ -9,6 +9,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "order",
+            "checkout_group",
             "provider",
             "external_ref",
             "status",

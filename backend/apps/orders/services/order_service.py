@@ -67,6 +67,14 @@ def create_order_with_lines(*, customer, lines: Iterable[dict]) -> Order:
         product = Product.objects.select_for_update().select_related("business").get(pk=product_id)
         if not product.is_active or product.business.status != "approved":
             raise OrderFlowError("Product not available")
+        # One order = one shop. Multi-shop purchases go through cart checkout.
+        if order.business_id is None:
+            order.business_id = product.business_id
+        elif order.business_id != product.business_id:
+            raise OrderFlowError(
+                "All items in an order must come from the same shop. "
+                "Use the cart to buy from several shops at once."
+            )
         if product.available_stock < qty:
             raise OrderFlowError("Insufficient stock")
         line_total = product.price * qty
@@ -74,7 +82,7 @@ def create_order_with_lines(*, customer, lines: Iterable[dict]) -> Order:
         total += line_total
         reserve_stock(order=order, product=product, quantity=qty)
     order.total = total
-    order.save(update_fields=["total", "updated_at"])
+    order.save(update_fields=["total", "business", "updated_at"])
     return order
 
 
@@ -160,19 +168,35 @@ def _initiate_refund_for_expired_order(*, order: Order) -> None:
 # ─── Payment ──────────────────────────────────────────────────────────────────
 
 def _has_successful_payment(order: Order) -> bool:
+    """True if this order was paid, directly or as part of a checkout group."""
+    from django.db.models import Q
     from apps.payments.models import Payment, PaymentStatus
-    return Payment.objects.filter(order=order, status=PaymentStatus.SUCCESS).exists()
+    covers_order = Q(order=order)
+    if order.checkout_group_id:
+        covers_order |= Q(checkout_group_id=order.checkout_group_id)
+    return Payment.objects.filter(covers_order, status=PaymentStatus.SUCCESS).exists()
 
 
 @transaction.atomic
-def mark_order_paid(*, order_id: UUID) -> Order:
+def mark_order_paid(*, order_id: UUID, payment_started_at=None) -> Order:
     """
     Called once a payment has been confirmed by the gateway.
     - Normal case: order becomes PAID and its held stock is confirmed as sold.
     - Payment arrived after the order was already cancelled (e.g. paid after the
       30-minute window and the stock was released): flag the order for a refund.
+    - `payment_started_at`: for a checkout paid in one go, an order the customer
+      cancelled BEFORE starting the payment was not included in the amount, so
+      it is left alone.
     """
     order = Order.objects.select_for_update().get(pk=order_id)
+
+    if (
+        order.status == OrderStatus.CANCELLED.value
+        and payment_started_at is not None
+        and order.cancelled_at is not None
+        and order.cancelled_at < payment_started_at
+    ):
+        return order
 
     if order.status == OrderStatus.PENDING_PAYMENT.value:
         transition_order_status(order_id=order.pk, to_status=OrderStatus.PAID.value)

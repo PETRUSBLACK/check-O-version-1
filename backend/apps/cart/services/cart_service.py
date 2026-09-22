@@ -6,7 +6,7 @@ from django.db import transaction
 from apps.businesses.models import Business
 from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.cart.models import Cart, CartItem
-from apps.orders.models import Order, OrderItem, OrderStatus
+from apps.orders.models import CheckoutGroup, Order, OrderItem, OrderStatus
 from apps.orders.services.stock_service import release_expired_holds, reserve_stock
 from apps.products.models import Product
 
@@ -118,17 +118,18 @@ def clear_cart(*, customer) -> None:
 # ─── Checkout ─────────────────────────────────────────────────────────────────
 
 @transaction.atomic
-def checkout(*, customer) -> Order:
+def checkout_cart(*, customer) -> CheckoutGroup:
     """
-    Convert the customer's cart into a confirmed Order.
+    Convert the customer's cart into orders — ONE ORDER PER SHOP — grouped in a
+    CheckoutGroup that the customer pays for with a single payment.
 
     Stock deduction logic:
     - If product uses channel allocation → deduct from smartmall_allocation
     - If product uses main stock → deduct from stock
     This ensures physical store stock is never accidentally reduced by SmartMall orders.
 
-    The stock is held for 30 minutes. If the order is not paid in that time it is
-    cancelled and the stock goes back to the same bucket.
+    The stock is held for 30 minutes. If the orders are not paid in that time they
+    are cancelled and the stock goes back to the same bucket.
     """
     cart = Cart.objects.prefetch_related(
         "items__product__business"
@@ -140,7 +141,7 @@ def checkout(*, customer) -> Order:
     # Free up stock held by unpaid orders whose payment window has passed
     release_expired_holds(product_ids=list(cart.items.values_list("product_id", flat=True)))
 
-    items = list(cart.items.select_related("product__business").all())
+    items = list(cart.items.select_related("product__business").order_by("created_at"))
 
     # --- Validation pass ---
     for item in items:
@@ -155,42 +156,65 @@ def checkout(*, customer) -> Order:
                 f"Requested {item.quantity}, available {product.available_stock}."
             )
 
-    # --- Create order ---
-    order = Order.objects.create(
-        customer=customer,
-        status=OrderStatus.PENDING_PAYMENT,
-        total=Decimal("0.00"),
-    )
-
-    total = Decimal("0.00")
-
-    # --- Hold stock (30-minute payment window) and create order lines ---
+    # --- Group cart lines by shop (keeps the order shops were added in) ---
+    items_by_shop = {}
     for item in items:
-        product = Product.objects.select_for_update().get(pk=item.product_id)
-        if item.quantity > product.available_stock:
-            raise CartError(
-                f"Insufficient stock for '{product.name}'. "
-                f"Requested {item.quantity}, available {product.available_stock}."
-            )
-        line_total = product.price * item.quantity
+        items_by_shop.setdefault(item.product.business_id, []).append(item)
 
-        OrderItem.objects.create(
-            order=order,
-            product=product,
-            quantity=item.quantity,
-            unit_price=product.price,
+    group = CheckoutGroup.objects.create(customer=customer, total=Decimal("0.00"))
+    group_total = Decimal("0.00")
+
+    for business_id, shop_items in items_by_shop.items():
+        order = Order.objects.create(
+            customer=customer,
+            business_id=business_id,
+            checkout_group=group,
+            status=OrderStatus.PENDING_PAYMENT,
+            total=Decimal("0.00"),
         )
+        total = Decimal("0.00")
 
-        total += line_total
+        # --- Hold stock (30-minute payment window) and create order lines ---
+        for item in shop_items:
+            product = Product.objects.select_for_update().get(pk=item.product_id)
+            if item.quantity > product.available_stock:
+                raise CartError(
+                    f"Insufficient stock for '{product.name}'. "
+                    f"Requested {item.quantity}, available {product.available_stock}."
+                )
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=item.quantity,
+                unit_price=product.price,
+            )
+            total += product.price * item.quantity
 
-        # Hold the units from the correct bucket (SmartMall allocation or main
-        # stock). Released automatically if unpaid after 30 minutes.
-        reserve_stock(order=order, product=product, quantity=item.quantity)
+            # Hold the units from the correct bucket (SmartMall allocation or
+            # main stock). Released automatically if unpaid after 30 minutes.
+            reserve_stock(order=order, product=product, quantity=item.quantity)
 
-    order.total = total
-    order.save(update_fields=["total", "updated_at"])
+        order.total = total
+        order.save(update_fields=["total", "updated_at"])
+        group_total += total
+
+    group.total = group_total
+    group.save(update_fields=["total", "updated_at"])
 
     # --- Clear cart ---
     cart.items.all().delete()
 
-    return order
+    return group
+
+
+def checkout(*, customer) -> Order:
+    """
+    Single-shop convenience wrapper around checkout_cart(): returns the one Order.
+    Raises CartError if the cart has items from more than one shop — use
+    checkout_cart() for that.
+    """
+    cart = Cart.objects.filter(customer=customer).first()
+    if cart and cart.items.values("product__business_id").distinct().count() > 1:
+        raise CartError("Your cart has items from several shops. Use checkout_cart().")
+    group = checkout_cart(customer=customer)
+    return group.orders.get()

@@ -12,12 +12,12 @@ from apps.cart.serializers import (
 from apps.cart.services.cart_service import (
     CartError,
     add_to_cart,
-    checkout,
+    checkout_cart,
     get_or_create_cart,
     remove_from_cart,
     update_cart_item,
 )
-from apps.orders.serializers import OrderSerializer
+from apps.orders.serializers import CheckoutGroupSerializer
 from core.permissions import IsCustomer
 
 
@@ -94,30 +94,32 @@ class RemoveFromCartView(APIView):
 
 class CheckoutView(APIView):
     """
-    Workflow: Convert cart into a confirmed Order.
+    Workflow: Convert the cart into orders — one order per shop — grouped in a
+    single checkout that the customer pays for once.
 
     Full checkout flow:
-      Cart → validate stock → deduct stock → create Order → clear Cart
+      Cart → validate stock → hold stock (30 min) → one Order per shop → clear Cart
 
-    Returns the created Order. Customer must then initiate payment.
+    Returns the checkout group. Customer must then initiate payment for it.
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
     @extend_schema(
         request=None,
-        responses={201: OrderSerializer},
+        responses={201: CheckoutGroupSerializer},
         tags=["cart"],
-        summary="Checkout: convert cart into an order",
+        summary="Checkout: convert cart into one order per shop",
         description=(
-            "Converts the current cart into an Order with status `pending_payment`. "
-            "Stock is reserved immediately. Cart is cleared after successful checkout. "
-            "Call `POST /api/payments/initiate/` next to pay for the order."
+            "Splits the cart into one Order per shop (status `pending_payment`), "
+            "grouped in a checkout. Stock is held for 30 minutes. Cart is cleared. "
+            "Next, call `POST /api/payments/initiate/` with `checkout_group_id` to "
+            "pay for all the orders at once."
         ),
     )
     def post(self, request):
         try:
-            order = checkout(customer=request.user)
+            group = checkout_cart(customer=request.user)
         except CartError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+        return Response(CheckoutGroupSerializer(group).data, status=status.HTTP_201_CREATED)

@@ -14,7 +14,7 @@ from uuid import UUID
 
 from django.db import transaction
 
-from apps.orders.models import Order, OrderStatus
+from apps.orders.models import CheckoutGroup, Order, OrderStatus
 from apps.orders.services.order_service import OrderFlowError, mark_order_paid
 from apps.payments.models import Payment, PaymentProvider, PaymentStatus
 from .registry import get_gateway
@@ -22,6 +22,74 @@ from .registry import get_gateway
 logger = logging.getLogger(__name__)
 
 _VALID_PROVIDERS = {c.value for c in PaymentProvider}
+
+
+@transaction.atomic
+def initiate_checkout_payment(
+    *,
+    checkout_group_id: UUID,
+    provider: str,
+) -> tuple[Payment, str]:
+    """
+    Initiate ONE payment for a whole checkout (all its shop orders).
+
+    The amount is worked out here from the orders still awaiting payment —
+    never taken from the client. Orders the customer already cancelled are
+    left out.
+    """
+    if provider not in _VALID_PROVIDERS:
+        raise ValueError(f"Invalid provider '{provider}'.")
+
+    group = CheckoutGroup.objects.select_for_update().select_related("customer").get(pk=checkout_group_id)
+
+    if Payment.objects.filter(checkout_group=group, status=PaymentStatus.SUCCESS).exists():
+        raise ValueError("This checkout has already been paid.")
+
+    pending = list(
+        Order.objects.select_for_update()
+        .filter(checkout_group=group, status=OrderStatus.PENDING_PAYMENT.value)
+    )
+    if not pending:
+        raise ValueError("None of the orders in this checkout are awaiting payment.")
+
+    amount = sum((o.total for o in pending), Decimal("0.00"))
+    gateway = get_gateway(provider)
+
+    try:
+        result = gateway.initiate(
+            order_id=str(group.pk),
+            amount=amount,
+            email=group.customer.email,
+        )
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.exception("gateway_initiate_error provider=%s checkout=%s", provider, group.pk)
+        raise ValueError(f"Payment initiation failed: {exc}") from exc
+
+    payment = Payment.objects.create(
+        checkout_group=group,
+        provider=provider,
+        amount=amount,
+        external_ref=result.external_ref,
+        status=PaymentStatus.PENDING,
+    )
+
+    logger.info(
+        "payment_initiated id=%s provider=%s checkout=%s orders=%d ref=%s",
+        payment.pk, provider, group.pk, len(pending), result.external_ref,
+    )
+
+    return payment, result.payment_url
+
+
+def _mark_orders_paid(payment: Payment) -> None:
+    """Mark every order this payment covers as paid (or flag refunds for late ones)."""
+    for order in payment.get_orders():
+        try:
+            mark_order_paid(order_id=order.pk, payment_started_at=payment.created_at)
+        except OrderFlowError as exc:
+            logger.error("order_transition_failed after payment order=%s error=%s", order.pk, exc)
 
 
 @transaction.atomic
@@ -52,6 +120,12 @@ def initiate_payment(
 
     if order.status != OrderStatus.PENDING_PAYMENT.value:
         raise ValueError("This order is no longer awaiting payment.")
+
+    if order.checkout_group_id and order.checkout_group.orders.count() > 1:
+        raise ValueError(
+            "This order is part of a checkout with several shops. "
+            "Pay for the whole checkout instead."
+        )
 
     gateway = get_gateway(provider)
 
@@ -98,7 +172,7 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
     payment = (
         Payment.objects
         .select_for_update()
-        .select_related("order")
+        .select_related("order", "checkout_group")
         .filter(external_ref=external_ref, provider=provider)
         .first()
     )
@@ -128,21 +202,20 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
     payment.status = PaymentStatus.SUCCESS
     payment.save(update_fields=["status", "updated_at"])
 
-    try:
-        mark_order_paid(order_id=payment.order_id)
-    except OrderFlowError as exc:
-        logger.error("order_transition_failed after payment order=%s error=%s", payment.order_id, exc)
+    _mark_orders_paid(payment)
 
-    # Fire payment confirmed notification
+    # Fire payment confirmed notification (once per payment)
     try:
         from apps.notifications.services.notification_service import notify_payment_confirmed
-        notify_payment_confirmed(order=payment.order, payment=payment)
+        orders = payment.get_orders()
+        if orders:
+            notify_payment_confirmed(order=orders[0], payment=payment)
     except Exception:
         pass
 
     logger.info(
-        "payment_confirmed id=%s provider=%s order=%s ref=%s",
-        payment.pk, provider, payment.order_id, external_ref,
+        "payment_confirmed id=%s provider=%s order=%s checkout=%s ref=%s",
+        payment.pk, provider, payment.order_id, payment.checkout_group_id, external_ref,
     )
 
     return payment
@@ -187,5 +260,5 @@ def confirm_payment_success(*, payment_id: UUID) -> Payment:
         raise ValueError("Cannot confirm a failed payment.")
     payment.status = PaymentStatus.SUCCESS
     payment.save(update_fields=["status", "updated_at"])
-    mark_order_paid(order_id=payment.order_id)
+    _mark_orders_paid(payment)
     return payment

@@ -8,6 +8,7 @@ Required env vars:
     PAYSTACK_SECRET_KEY  — sk_test_xxx (test) or sk_live_xxx (production)
 """
 
+import secrets
 import hashlib
 import hmac
 import logging
@@ -45,7 +46,8 @@ class PaystackGateway(BaseGateway):
             "email": email,
             "amount": amount_kobo,
             "currency": currency,
-            "reference": f"SM-{order_id}",
+            # Unique per attempt, so a customer can retry a failed/abandoned payment
+            "reference": f"SM-{order_id}-{secrets.token_hex(3)}",
             "metadata": {"order_id": str(order_id), "platform": "smartmall"},
             "callback_url": f"{getattr(settings, 'FRONTEND_ORIGIN', '')}/payment/callback",
         }

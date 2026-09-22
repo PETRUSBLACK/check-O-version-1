@@ -55,10 +55,45 @@ def _generate_pickup_code():
     return "SM-" + "".join(random.choices(string.digits, k=4))
 
 
+class CheckoutGroup(UUIDTimeStampedModel):
+    """
+    One checkout by a customer. A cart with items from several shops becomes
+    one CheckoutGroup containing one Order per shop, paid with a single payment.
+    """
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="checkout_groups",
+    )
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    class Meta:
+        db_table = "orders_checkoutgroup"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Checkout {self.id}"
+
+
 class Order(UUIDTimeStampedModel):
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
+        related_name="orders",
+    )
+    # The shop fulfilling this order (one order per shop)
+    business = models.ForeignKey(
+        "businesses.Business",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="shop_orders",
+    )
+    checkout_group = models.ForeignKey(
+        CheckoutGroup,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="orders",
     )
     status = models.CharField(
