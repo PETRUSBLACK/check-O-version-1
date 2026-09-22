@@ -190,7 +190,7 @@ class SetChannelAllocationView(APIView):
 
         return Response({
             "message": message,
-            "product": ProductSerializer(product).data,
+            "product": ProductSerializer(product, context={"request": request}).data,
         })
 
 

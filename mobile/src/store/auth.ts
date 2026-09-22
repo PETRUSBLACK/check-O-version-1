@@ -1,51 +1,58 @@
 import { create } from "zustand";
-import { User, authService } from "../services/auth";
+
+import { setOnSessionExpired, tokens } from "../config/api";
+import { authService, RegisterPayload, User } from "../services/auth";
+
+type Status = "loading" | "signedOut" | "signedIn";
 
 interface AuthState {
   user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  loadUser: () => Promise<void>;
+  status: Status;
+  /** Run once at start-up: restores the session if a token is saved. */
+  bootstrap: () => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set) => ({
   user: null,
-  isLoading: false,
-  isAuthenticated: false,
+  status: "loading",
 
-  loadUser: async () => {
-    set({ isLoading: true });
+  bootstrap: async () => {
+    setOnSessionExpired(() => set({ user: null, status: "signedOut" }));
     try {
+      const token = await tokens.getAccess();
+      if (!token) {
+        set({ status: "signedOut" });
+        return;
+      }
       const user = await authService.me();
-      set({ user, isAuthenticated: true });
+      set({ user, status: "signedIn" });
     } catch {
-      set({ user: null, isAuthenticated: false });
-    } finally {
-      set({ isLoading: false });
+      await tokens.clear().catch(() => {});
+      set({ user: null, status: "signedOut" });
     }
   },
 
-  login: async (email, password) => {
-    set({ isLoading: true });
-    try {
-      await authService.login(email, password);
-      const user = await authService.me();
-      set({ user, isAuthenticated: true });
-    } finally {
-      set({ isLoading: false });
-    }
+  signIn: async (email, password) => {
+    await authService.login(email, password);
+    const user = await authService.me();
+    set({ user, status: "signedIn" });
   },
 
-  logout: async () => {
-    set({ isLoading: true });
+  register: async (payload) => {
+    await authService.register(payload);
+    await authService.login(payload.email, payload.password);
+    const user = await authService.me();
+    set({ user, status: "signedIn" });
+  },
+
+  signOut: async () => {
     try {
-      const { SecureStore } = await import("expo-secure-store");
-      const refresh = await SecureStore.getItemAsync("refresh_token");
-      if (refresh) await authService.logout(refresh);
+      await authService.logout();
     } finally {
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, status: "signedOut" });
     }
   },
 }));

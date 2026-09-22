@@ -1,64 +1,60 @@
-import * as SecureStore from "expo-secure-store";
-import { api } from "../config/api";
+import { api, tokens } from "../config/api";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Mirrors the backend: apps/users (UserSerializer, RegisterSerializer)
 
 export type UserRole = "customer" | "vendor" | "admin";
 
 export interface User {
   id: string;
   email: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
   role: UserRole;
+  date_joined: string;
 }
 
-export interface AuthTokens {
-  access: string;
-  refresh: string;
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  role?: "customer" | "vendor";
 }
-
-// ─── Auth service — mirrors POST /api/auth/* endpoints ───────────────────────
 
 export const authService = {
-  async register(payload: {
-    email: string;
-    password: string;
-    full_name: string;
-    role: UserRole;
-  }): Promise<User> {
-    const { data } = await api.post("/auth/register/", payload);
+  // POST /api/auth/register/
+  async register(payload: RegisterPayload): Promise<User> {
+    const { data } = await api.post<User>("/auth/register/", payload);
     return data;
   },
 
-  async login(email: string, password: string): Promise<AuthTokens> {
-    const { data } = await api.post<AuthTokens>("/auth/token/", {
-      email,
+  // POST /api/auth/token/  → saves the tokens
+  async login(email: string, password: string): Promise<void> {
+    const { data } = await api.post<{ access: string; refresh: string }>("/auth/token/", {
+      email: email.trim().toLowerCase(),
       password,
     });
-    await SecureStore.setItemAsync("access_token", data.access);
-    await SecureStore.setItemAsync("refresh_token", data.refresh);
-    return data;
+    await tokens.save(data.access, data.refresh);
   },
 
+  // GET /api/auth/me/
   async me(): Promise<User> {
     const { data } = await api.get<User>("/auth/me/");
     return data;
   },
 
-  async logout(refreshToken: string): Promise<void> {
-    await api.post("/auth/logout/", { refresh: refreshToken });
-    await SecureStore.deleteItemAsync("access_token");
-    await SecureStore.deleteItemAsync("refresh_token");
+  // POST /api/auth/logout/ (blacklists the refresh token), then forget tokens
+  async logout(): Promise<void> {
+    const refresh = await tokens.getRefresh();
+    try {
+      if (refresh) await api.post("/auth/logout/", { refresh });
+    } finally {
+      await tokens.clear();
+    }
   },
 
-  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
-    await api.post("/auth/password/change/", {
-      old_password: oldPassword,
-      new_password: newPassword,
-    });
-  },
-
+  // POST /api/auth/password/reset/
   async requestPasswordReset(email: string): Promise<void> {
-    await api.post("/auth/password/reset/", { email });
+    await api.post("/auth/password/reset/", { email: email.trim().toLowerCase() });
   },
 };
