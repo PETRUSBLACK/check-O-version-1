@@ -1,6 +1,7 @@
 from .role_permissions import (
     IsAdmin,
     IsCustomer,
+    IsShopper,
     IsStaffOrPlatformAdmin,
     IsVendor,
     IsVendorOrAdmin,
@@ -9,6 +10,7 @@ from .role_permissions import (
 __all__ = [
     "IsAdmin",
     "IsCustomer",
+    "IsShopper",
     "IsStaffOrPlatformAdmin",
     "IsVendor",
     "IsVendorOrAdmin",

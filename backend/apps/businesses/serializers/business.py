@@ -44,6 +44,16 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    avg_rating = serializers.SerializerMethodField()
+    rating_count = serializers.SerializerMethodField()
+
+    def get_avg_rating(self, obj) -> float | None:
+        scores = [r.score for r in obj.ratings.all()]
+        return round(sum(scores) / len(scores), 1) if scores else None
+
+    def get_rating_count(self, obj) -> int:
+        return len(obj.ratings.all())
+
     class Meta:
         model = Business
 
@@ -54,6 +64,8 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
             "slug",
             "category",
             "category_display",
+            "avg_rating",
+            "rating_count",
             "tagline",
             "description",
             "logo",

@@ -43,6 +43,8 @@ def add_to_cart(*, customer, product_id: UUID, quantity: int = 1) -> CartItem:
         raise CartError("Product is not available.")
     if product.business.status != BusinessStatus.APPROVED:
         raise CartError("Product is from an unapproved vendor.")
+    if product.business.owner_id == customer.id:
+        raise CartError("You can't buy from your own shop.")
 
     # Use available_stock — respects channel allocation if set
     available = product.available_stock
@@ -58,10 +60,12 @@ def add_to_cart(*, customer, product_id: UUID, quantity: int = 1) -> CartItem:
         new_quantity = item.quantity + quantity
 
         if new_quantity > available:
-            raise CartError(
-                f"Only {available} unit(s) available for SmartMall orders. "
-                f"You already have {item.quantity} in your cart."
-            )
+            if item.quantity:
+                raise CartError(
+                    f"{product.business.name} has {available} of this on Check-O, "
+                    f"and you already have {item.quantity} in your cart."
+                )
+            raise CartError(f"{product.business.name} only has {available} of this on Check-O.")
 
         item.quantity = new_quantity
         item.save(update_fields=["quantity", "updated_at"])
@@ -93,7 +97,8 @@ def update_cart_item(*, customer, product_id: UUID, quantity: int) -> CartItem:
     # Use available_stock — respects channel allocation
     if quantity > item.product.available_stock:
         raise CartError(
-            f"Only {item.product.available_stock} unit(s) available for SmartMall orders."
+            f"{item.product.business.name} only has "
+            f"{item.product.available_stock} of this on Check-O."
         )
 
     with transaction.atomic():
@@ -152,8 +157,8 @@ def checkout_cart(*, customer) -> CheckoutGroup:
             raise CartError(f"'{product.name}' is from an unapproved vendor.")
         if item.quantity > product.available_stock:
             raise CartError(
-                f"Insufficient stock for '{product.name}'. "
-                f"Requested {item.quantity}, available {product.available_stock}."
+                f"{product.business.name} now has only {product.available_stock} "
+                f"of '{product.name}'. Please reduce it in your cart."
             )
 
     # --- Group cart lines by shop (keeps the order shops were added in) ---
@@ -179,8 +184,8 @@ def checkout_cart(*, customer) -> CheckoutGroup:
             product = Product.objects.select_for_update().get(pk=item.product_id)
             if item.quantity > product.available_stock:
                 raise CartError(
-                    f"Insufficient stock for '{product.name}'. "
-                    f"Requested {item.quantity}, available {product.available_stock}."
+                    f"{product.business.name} now has only {product.available_stock} "
+                    f"of '{product.name}'. Please reduce it in your cart."
                 )
             OrderItem.objects.create(
                 order=order,

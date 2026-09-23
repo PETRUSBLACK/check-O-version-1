@@ -23,6 +23,33 @@ Running record of changes, decisions and things to check. Newest first.
 
 ---
 
+## 2026-09-23 — Mobile stage 3: shop page, product page, cart
+- **Shop page**: cover, rating, address, and the shop's products in a 2-column grid.
+  A search box appears once a shop has more than 6 products. Sold-out items are dimmed.
+- **Product page**: photo, price, "In stock" / "Only 3 left" / "Sold out", description,
+  quantity stepper capped at what's actually available, and **Add to cart**.
+- **Cart tab**: real cart grouped by shop, per-shop subtotals, quantity + / − / remove,
+  grand total, and a count badge on the tab. Checkout button is there but disabled — stage 4.
+- Product search results now show the shop name and open the product page.
+- **Vendors can shop.** The old rule let a vendor see only their own shop and products, so a
+  vendor account saw an empty app and got 403 on the cart. Now any signed-in user can browse and
+  buy — except from their **own** shop, which is refused with a clear message.
+- Stock messages rewritten for shoppers: "Mama Nkechi Stores has 12 of this on Check-O, and you
+  already have 2 in your cart" instead of "Only 12 unit(s) available for SmartMall orders".
+- Products now carry `business_name` and `cover_image` (the vendor's cover photo, or the first
+  one), prefetched so a grid is still one query. Shop detail now includes rating.
+- Checked: TypeScript clean, Android bundle builds, and the whole flow — sign in, home, shop,
+  product, add to cart, cart — driven in a browser against a live local backend.
+
+## 2026-09-23 — Product privacy + correct stock number
+- `cost_price`, `stock`, `smartmall_allocation` and `low_stock_threshold` are now **hidden from
+  customers** — only the shop owner and admins see them. Before this, any customer viewing a product
+  could read the shop's buying price, i.e. its profit margin.
+- `available_stock` in the API now matches the model: **min(stock, allocation)**. Before, a shop that
+  allocated 20 units to Check-O but then sold down to 5 in the shop still advertised 20 online.
+- Schema now types `available_stock` as a number and `uses_channel_allocation` as true/false.
+- Tests: 220 passing.
+
 ## 2026-09-22 — Mobile app: stages 1–2 (setup, sign in, Home)
 - New Expo app in `mobile/` on **SDK 57** (the version the current Expo Go supports). SDK 51 from the
   old `package.json` would no longer open in Expo Go.
@@ -63,12 +90,17 @@ Running record of changes, decisions and things to check. Newest first.
 ---
 
 ## Open items
-- **Backend (do before stage 3):** `ProductSerializer` exposes `cost_price` to everyone — hide it from
-  customers. Its `available_stock` also disagrees with the model (should be min(stock, allocation)).
+- Location on Home is GPS + Google's name for the spot, which is often wrong in Asaba. Needs a
+  tappable picker (choose your area / confirm GPS) — doing it with the checkout work, where the
+  delivery address actually matters.
 - Old `mobile/src/services/cart.ts`, `orders.ts`, `ai.ts` send the wrong fields — replaced in stages 3–5.
 - Batch 3: move `ai/` and `ml/` inside `backend/` so AI works on Railway; set `ANTHROPIC_API_KEY`.
 - Cleanup: old `api.py` files, `config/settings.py`, `backend/management/`, unused `realtime/`,
   numpy/pandas/scikit-learn in requirements, `STATICFILES_STORAGE` → `STORAGES` in prod.py.
 - Vendor "confirm before payment" feature (before real vendors).
 - Railway cron job for `run_tasks --scheduled`.
-- Mobile app: stages 1–6 (setup/login → home → shop/product → cart/checkout → my orders → vendor side).
+- Mobile app: stage 4 (cart → checkout → payment), 5 (my orders), 6 (vendor side).
+- Shop page shows `Business.address`, which most vendors leave empty; the *location* address
+  (used for distance) is a different field. Decide which one the shop page should show.
+- Product photos: nothing in the app uploads them yet, so every product shows a placeholder
+  icon. Vendor product management (stage 6) is where that goes.

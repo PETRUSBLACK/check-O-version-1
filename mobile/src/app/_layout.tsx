@@ -64,6 +64,7 @@ export default function RootLayout() {
           <Stack.Protected guard={signedIn}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="shop/[id]" />
+            <Stack.Screen name="product/[id]" />
             <Stack.Screen name="search" />
           </Stack.Protected>
         </Stack>

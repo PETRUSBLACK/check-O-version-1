@@ -46,16 +46,19 @@ class ProductPrivateFieldsTest(TestCase):
         self.assertEqual(res.data["available_stock"], 12)
         self.assertTrue(res.data["uses_channel_allocation"])
 
-    def test_another_vendor_cannot_reach_the_product_at_all(self):
-        """A signed-in vendor only sees their own catalogue, so this is a 404."""
+    def test_another_vendor_browses_but_cannot_see_private_fields(self):
+        """A vendor is also a shopper: they can open another shop's product, but not its numbers."""
         other = make_vendor("other@example.com")
         make_business(other, slug="other-shop")
         self.client.force_authenticate(other)
         res = self.client.get(self.url)
-        self.assertEqual(res.status_code, 404)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["name"], "Rice 50kg")
+        for field in VENDOR_ONLY_FIELDS:
+            self.assertNotIn(field, res.data, f"{field} leaked to a different vendor")
 
     def test_serializer_hides_private_fields_from_a_different_vendor(self):
-        """Belt and braces: even if such a product reached them, the numbers are stripped."""
+        """Belt and braces, straight at the serializer."""
         other = make_vendor("other2@example.com")
         make_business(other, slug="other-shop-2")
         request = APIRequestFactory().get(self.url)

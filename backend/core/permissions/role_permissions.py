@@ -19,6 +19,18 @@ class IsCustomer(BasePermission):
         return bool(u and u.is_authenticated and getattr(u, "role", None) == "customer")
 
 
+class IsShopper(BasePermission):
+    """
+    Anyone signed in may shop. A shop owner is also a person who buys things,
+    so vendors and admins are not shut out of the cart and checkout.
+    Buying from your *own* shop is blocked further in, in the cart service.
+    """
+
+    def has_permission(self, request, view):
+        u = request.user
+        return bool(u and u.is_authenticated)
+
+
 class IsVendorOrAdmin(BasePermission):
     def has_permission(self, request, view):
         u = request.user

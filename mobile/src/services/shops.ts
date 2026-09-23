@@ -35,7 +35,29 @@ export type ShopCategory =
   | "health"
   | "retail";
 
+// Mirrors GET /api/businesses/{id}/ (BusinessDetailSerializer) — the fields the app uses.
+export interface ShopDetail {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  category_display: string;
+  avg_rating: number | null;
+  rating_count: number;
+  tagline: string;
+  description: string;
+  logo: string | null;
+  cover_image: string | null;
+  business_phone: string;
+  address: string;
+}
+
 export const shopsService = {
+  async get(id: string): Promise<ShopDetail> {
+    const { data } = await api.get<ShopDetail>(`/businesses/${id}/`);
+    return data;
+  },
+
   async nearby(params: NearbyParams): Promise<NearbyShop[]> {
     const { data } = await api.get<NearbyShop[]>("/shops/nearby/", {
       params: { radius_km: 15, ...params },

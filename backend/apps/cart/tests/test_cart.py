@@ -151,12 +151,40 @@ class CartAPITest(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["item_count"], 1)
 
-    def test_vendor_cannot_add_to_cart(self):
+    def test_vendor_cannot_buy_from_their_own_shop(self):
         self.client.force_authenticate(self.vendor)
         res = self.client.post("/api/cart/add/", {
             "product_id": str(self.product.pk), "quantity": 1
         }, format="json")
-        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("your own shop", res.data["detail"])
+
+    def test_vendor_can_buy_from_someone_elses_shop(self):
+        """A shop owner is a shopper too."""
+        from apps.businesses.models import Business
+        from apps.products.models import Product
+        from apps.businesses.choices import BusinessStatus
+
+        other_owner = User.objects.create_user(
+            email="othershop@example.com", password="testpass12345", role=UserRole.VENDOR
+        )
+        other_shop = Business.objects.create(
+            owner=other_owner,
+            name="Other Shop",
+            slug="other-shop-cart",
+            legal_name="Other Shop Ltd",
+            registration_number="RC7654321",
+            status=BusinessStatus.APPROVED,
+        )
+        their_product = Product.objects.create(
+            business=other_shop, name="Their Widget", price="500.00", stock=10, is_active=True
+        )
+        self.client.force_authenticate(self.vendor)
+        res = self.client.post("/api/cart/add/", {
+            "product_id": str(their_product.pk), "quantity": 2
+        }, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["item_count"], 1)
 
     def test_unauthenticated_cannot_add_to_cart(self):
         res = self.client.post("/api/cart/add/", {

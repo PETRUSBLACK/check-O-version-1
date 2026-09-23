@@ -32,6 +32,15 @@ const FALLBACK: CategoryLook = {
   ink: colors.ink,
 };
 
+/** For a product with no photo, when we don't know what kind of shop it came from. */
+export const PRODUCT_LOOK: CategoryLook = {
+  label: "Product",
+  value: "",
+  icon: "package-variant-closed",
+  tint: "#ECEAE3",
+  ink: colors.muted,
+};
+
 export function categoryStyle(value: string): CategoryLook {
   return HOME_CATEGORIES.find((c) => c.value === value) ?? FALLBACK;
 }

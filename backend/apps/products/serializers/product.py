@@ -15,6 +15,8 @@ VENDOR_ONLY_FIELDS = (
 class ProductSerializer(serializers.ModelSerializer):
     available_stock = serializers.SerializerMethodField()
     uses_channel_allocation = serializers.SerializerMethodField()
+    business_name = serializers.CharField(source="business.name", read_only=True)
+    cover_image = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -22,7 +24,9 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "business",
+            "business_name",
             "category",
+            "cover_image",
             "name",
             "slug",
             "sku",
@@ -56,6 +60,33 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_uses_channel_allocation(self, obj) -> bool:
         return obj.uses_channel_allocation
+
+    def get_cover_image(self, obj) -> str | None:
+        """
+        The photo to show in a list or on the product page: the one the vendor marked
+        as cover, otherwise the first active one. Returns a full URL the app can load.
+        """
+        images = getattr(obj, "images", None)
+        if images is None:
+            return None
+        chosen = None
+        # Use the already-loaded list when the view prefetched it, so a grid of
+        # products is still one query.
+        loaded = getattr(images, "_result_cache", None)
+        candidates = loaded if loaded is not None else list(images.filter(is_active=True))
+        for image in candidates:
+            if not image.is_active:
+                continue
+            if image.is_cover:
+                chosen = image
+                break
+            if chosen is None:
+                chosen = image
+        if chosen is None or not chosen.image:
+            return None
+        request = self.context.get("request")
+        url = chosen.image.url
+        return request.build_absolute_uri(url) if request else url
 
     def _may_see_private_fields(self, obj) -> bool:
         request = self.context.get("request")

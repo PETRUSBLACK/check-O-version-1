@@ -2,6 +2,7 @@
 Business API views.
 """
 
+from django.db.models import Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -46,7 +47,10 @@ class BusinessViewSet(viewsets.ModelViewSet):
             return qs
 
         if getattr(user, "role", None) == "vendor":
-            return qs.filter(owner=user)
+            # Own shops (any status) plus every approved shop — a vendor also shops.
+            return qs.filter(
+                Q(owner=user) | Q(status=BusinessStatus.APPROVED)
+            ).distinct()
 
         return qs.filter(status=BusinessStatus.APPROVED)
 

@@ -18,12 +18,12 @@ from apps.cart.services.cart_service import (
     update_cart_item,
 )
 from apps.orders.serializers import CheckoutGroupSerializer
-from core.permissions import IsCustomer
+from core.permissions import IsShopper
 
 
 class AddToCartView(APIView):
     """Workflow: Add a product to the cart (or increment quantity)."""
-    permission_classes = [IsAuthenticated, IsCustomer]
+    permission_classes = [IsAuthenticated, IsShopper]
 
     @extend_schema(
         request=AddToCartSerializer,
@@ -44,12 +44,12 @@ class AddToCartView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         cart = get_or_create_cart(customer=request.user)
-        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+        return Response(CartSerializer(cart, context={"request": request}).data, status=status.HTTP_200_OK)
 
 
 class UpdateCartItemView(APIView):
     """Workflow: Set exact quantity of a cart item (0 = remove)."""
-    permission_classes = [IsAuthenticated, IsCustomer]
+    permission_classes = [IsAuthenticated, IsShopper]
 
     @extend_schema(
         request=UpdateCartItemSerializer,
@@ -70,12 +70,12 @@ class UpdateCartItemView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         cart = get_or_create_cart(customer=request.user)
-        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+        return Response(CartSerializer(cart, context={"request": request}).data, status=status.HTTP_200_OK)
 
 
 class RemoveFromCartView(APIView):
     """Workflow: Remove a specific product from the cart."""
-    permission_classes = [IsAuthenticated, IsCustomer]
+    permission_classes = [IsAuthenticated, IsShopper]
 
     @extend_schema(
         responses={200: CartSerializer},
@@ -89,7 +89,7 @@ class RemoveFromCartView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         cart = get_or_create_cart(customer=request.user)
-        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+        return Response(CartSerializer(cart, context={"request": request}).data, status=status.HTTP_200_OK)
 
 
 class CheckoutView(APIView):
@@ -102,7 +102,7 @@ class CheckoutView(APIView):
 
     Returns the checkout group. Customer must then initiate payment for it.
     """
-    permission_classes = [IsAuthenticated, IsCustomer]
+    permission_classes = [IsAuthenticated, IsShopper]
 
     @extend_schema(
         request=None,

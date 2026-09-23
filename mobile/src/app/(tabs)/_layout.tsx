@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs } from "expo-router";
 import { ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { cartService, unitCount } from "../../services/cart";
 import { colors, fonts } from "../../theme";
 
 type IconName = keyof typeof Feather.glyphMap;
@@ -13,6 +15,9 @@ const tabIcon =
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  // Kept warm here so the badge is right the moment you leave a product page.
+  const cart = useQuery({ queryKey: ["cart"], queryFn: cartService.get });
+  const count = cart.data ? unitCount(cart.data) : 0;
   return (
     <Tabs
       screenOptions={{
@@ -31,7 +36,15 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: tabIcon("home") }} />
       <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: tabIcon("file-text") }} />
-      <Tabs.Screen name="cart" options={{ title: "Cart", tabBarIcon: tabIcon("shopping-bag") }} />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          title: "Cart",
+          tabBarIcon: tabIcon("shopping-bag"),
+          tabBarBadge: count > 0 ? count : undefined,
+          tabBarBadgeStyle: { backgroundColor: colors.saffron, color: colors.ink, fontFamily: fonts.bodyBold },
+        }}
+      />
       <Tabs.Screen name="account" options={{ title: "Account", tabBarIcon: tabIcon("user") }} />
     </Tabs>
   );

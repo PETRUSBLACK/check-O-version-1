@@ -144,18 +144,35 @@ class ProductReadTest(TestCase):
         self.assertIn("Active", names)
         self.assertIn("Inactive", names)
 
-    def test_vendor_does_not_see_other_vendors_products(self):
+    def test_vendor_browses_other_shops_but_only_what_a_shopper_would_see(self):
+        """A vendor is a shopper too, so other shops' listed products are visible —
+        but their unlisted ones stay hidden."""
         vendor1 = make_vendor("v1@example.com")
         vendor2 = make_vendor("v2@example.com")
         biz1 = make_business(vendor1, slug="biz1")
         biz2 = make_business(vendor2, slug="biz2")
         make_product(biz1, name="V1 Product")
         make_product(biz2, name="V2 Product")
+        make_product(biz2, name="V2 Draft", is_active=False)
         self.client.force_authenticate(vendor1)
         res = self.client.get("/api/products/")
         names = [p["name"] for p in res.data["results"]]
         self.assertIn("V1 Product", names)
-        self.assertNotIn("V2 Product", names)
+        self.assertIn("V2 Product", names)
+        self.assertNotIn("V2 Draft", names)
+
+    def test_vendor_can_filter_the_list_down_to_their_own_shop(self):
+        """How the vendor dashboard gets just its own catalogue."""
+        vendor1 = make_vendor("v1b@example.com")
+        vendor2 = make_vendor("v2b@example.com")
+        biz1 = make_business(vendor1, slug="biz1b")
+        biz2 = make_business(vendor2, slug="biz2b")
+        make_product(biz1, name="Mine")
+        make_product(biz2, name="Theirs")
+        self.client.force_authenticate(vendor1)
+        res = self.client.get("/api/products/", {"business": str(biz1.id)})
+        names = [p["name"] for p in res.data["results"]]
+        self.assertEqual(names, ["Mine"])
 
 
 class ProductUpdateDeleteTest(TestCase):
@@ -188,8 +205,10 @@ class ProductUpdateDeleteTest(TestCase):
             {"name": "Stolen"},
             format="json",
         )
-        # Other vendors' products are hidden from this vendor, so 404 (not 403)
-        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        # Visible while browsing, but not editable: refused, and unchanged.
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        product.refresh_from_db()
+        self.assertNotEqual(product.name, "Stolen")
 
     def test_vendor_can_delete_own_product(self):
         vendor = make_vendor()
@@ -207,6 +226,6 @@ class ProductUpdateDeleteTest(TestCase):
         product = make_product(biz2)
         self.client.force_authenticate(vendor1)
         res = self.client.delete(f"/api/products/{product.pk}/")
-        # Other vendors' products are hidden from this vendor, so 404 (not 403)
-        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        # Visible while browsing, but not deletable: refused, and still there.
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())

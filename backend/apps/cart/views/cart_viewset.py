@@ -15,7 +15,7 @@ class CartViewSet(ViewSet):
     @extend_schema(responses={200: CartSerializer}, tags=["cart"], summary="Get current user's cart")
     def list(self, request):
         cart = get_or_create_cart(customer=request.user)
-        return Response(CartSerializer(cart).data)
+        return Response(CartSerializer(cart, context={"request": request}).data)
 
     @extend_schema(
         request=None,

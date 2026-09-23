@@ -1,4 +1,5 @@
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from django.db.models import Prefetch, Q
 from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -6,7 +7,7 @@ from rest_framework.response import Response
 from apps.businesses.models import Business
 from apps.businesses.choices import BusinessStatus
 from core.permissions import IsVendorOrAdmin
-from apps.products.models import Product
+from apps.products.models import Product, ProductImage
 from apps.products.serializers import ProductSerializer
 from apps.products.services.catalog import create_product
 
@@ -33,13 +34,19 @@ class ProductViewSet(viewsets.ModelViewSet):
         return [permissions.AllowAny()]
 
     def get_queryset(self):
-        qs = Product.objects.select_related("business")
+        qs = Product.objects.select_related("business").prefetch_related(
+            Prefetch("images", queryset=ProductImage.objects.filter(is_active=True))
+        )
         user = self.request.user
         if user.is_authenticated and (user.is_staff or getattr(user, "role", None) == "admin"):
             return qs.all()
         if user.is_authenticated and getattr(user, "role", None) == "vendor":
+            # Their own catalogue (including drafts) plus everything a shopper can see —
+            # a vendor is also a customer and must be able to browse other shops.
             ids = Business.objects.filter(owner=user).values_list("id", flat=True)
-            return qs.filter(business_id__in=ids)
+            return qs.filter(
+                Q(business_id__in=ids) | Q(is_active=True, business__status="approved")
+            ).distinct()
         return qs.filter(is_active=True, business__status="approved")
 
     def create(self, request, *args, **kwargs):

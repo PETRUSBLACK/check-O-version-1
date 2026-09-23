@@ -2,9 +2,10 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { stockNote } from "../components/ProductCard";
 import { Banner, EmptyState } from "../components/ui";
 import { errorMessage } from "../config/api";
 import { useStatusBar } from "../hooks/useStatusBar";
@@ -63,22 +64,41 @@ export default function Search() {
               {results.data.length} result{results.data.length === 1 ? "" : "s"}
             </Text>
           }
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <View style={styles.thumb}>
-                <MaterialCommunityIcons name="package-variant-closed" size={26} color={colors.leaf} />
-              </View>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={styles.name} numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <Text style={styles.price}>{naira(item.price)}</Text>
-                <Text style={[styles.stock, item.available_stock <= 3 && { color: colors.red }]}>
-                  {item.available_stock > 0 ? `${item.available_stock} available` : "Out of stock"}
-                </Text>
-              </View>
-            </View>
-          )}
+          renderItem={({ item }) => {
+            const stock = stockNote(item.available_stock);
+            return (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`${item.name}, ${naira(item.price)}, at ${item.business_name}`}
+                onPress={() => router.push({ pathname: "/product/[id]", params: { id: item.id } })}
+                style={({ pressed }) => [styles.row, pressed && { opacity: 0.8 }]}
+              >
+                <View style={styles.thumb}>
+                  {item.cover_image ? (
+                    <Image
+                      source={{ uri: item.cover_image }}
+                      style={StyleSheet.absoluteFill}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : (
+                    <MaterialCommunityIcons name="package-variant-closed" size={26} color={colors.leaf} />
+                  )}
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.name} numberOfLines={2}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.shop} numberOfLines={1}>
+                    {item.business_name}
+                  </Text>
+                  <Text style={styles.price}>{naira(item.price)}</Text>
+                  <Text style={[styles.stock, stock.tone !== "ok" && { color: colors.red }]}>{stock.text}</Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.muted} />
+              </Pressable>
+            );
+          }}
         />
       )}
     </View>
@@ -120,8 +140,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mint,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   name: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  shop: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.leaf },
   price: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   stock: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.muted },
 });
