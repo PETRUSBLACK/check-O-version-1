@@ -110,6 +110,12 @@ class Order(UUIDTimeStampedModel):
         default=FulfilmentType.DELIVERY,
     )
     delivery_address = models.TextField(blank=True)
+    # Who the rider should ask for, and on what number.
+    recipient_name = models.CharField(max_length=120, blank=True)
+    delivery_phone = models.CharField(max_length=32, blank=True)
+    # What this shop charges to deliver in Asaba. Copied onto the order at
+    # checkout so a later change by the shop never alters a placed order.
+    delivery_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     # Pickup fields
     pickup_code = models.CharField(max_length=10, blank=True)
@@ -146,6 +152,11 @@ class Order(UUIDTimeStampedModel):
 
     def __str__(self) -> str:
         return str(self.id)
+
+    @property
+    def items_total(self):
+        """What the goods cost, without delivery. `total` is the full amount charged."""
+        return self.total - self.delivery_fee
 
     def set_pickup_deadline(self, hours: int = 48):
         self.pickup_deadline = timezone.now() + timezone.timedelta(hours=hours)

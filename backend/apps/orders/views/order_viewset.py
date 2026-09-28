@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -42,7 +43,10 @@ class OrderViewSet(
         if user.is_staff or getattr(user, "role", None) == "admin":
             return qs.order_by("-created_at")
         if getattr(user, "role", None) == "vendor":
-            return qs.filter(items__product__business__owner=user).distinct().order_by("-created_at")
+            # Their own shops' orders, plus anything they bought themselves.
+            return qs.filter(
+                Q(business__owner=user) | Q(customer=user)
+            ).distinct().order_by("-created_at")
         return qs.filter(customer=user).order_by("-created_at")
 
     @extend_schema(

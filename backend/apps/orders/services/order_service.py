@@ -39,7 +39,14 @@ _ALLOWED_TRANSITIONS = {
     OrderStatus.DRAFT.value: {OrderStatus.PENDING_PAYMENT.value, OrderStatus.CANCELLED.value},
     OrderStatus.PENDING_PAYMENT.value: {OrderStatus.PAID.value, OrderStatus.CANCELLED.value},
     OrderStatus.PAID.value: {OrderStatus.PROCESSING.value, OrderStatus.CANCELLED.value, OrderStatus.READY_FOR_PICKUP.value},
-    OrderStatus.PROCESSING.value: {OrderStatus.PACKAGING.value, OrderStatus.CANCELLED.value},
+    # A collection order goes straight from being prepared to ready to collect:
+    # "packaging" is a delivery idea and shouldn't be forced on a shop that is
+    # simply putting an order behind the counter.
+    OrderStatus.PROCESSING.value: {
+        OrderStatus.PACKAGING.value,
+        OrderStatus.READY_FOR_PICKUP.value,
+        OrderStatus.CANCELLED.value,
+    },
     OrderStatus.PACKAGING.value: {OrderStatus.SHIPPED.value, OrderStatus.READY_FOR_PICKUP.value},
     OrderStatus.SHIPPED.value: {OrderStatus.DELIVERED.value},
     OrderStatus.DELIVERED.value: set(),

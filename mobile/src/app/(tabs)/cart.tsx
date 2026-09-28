@@ -50,6 +50,7 @@ export default function Cart() {
   const data: CartData = cart.data;
   const shops = groupByShop(data);
   const units = unitCount(data);
+  const overStock = data.items.some((i) => i.quantity > i.product.available_stock);
 
   if (shops.length === 0) {
     return (
@@ -129,8 +130,17 @@ export default function Cart() {
           </Text>
           <Text style={styles.totalValue}>{naira(data.total)}</Text>
         </View>
-        <Text style={styles.deliveryNote}>Delivery is worked out at checkout.</Text>
-        <Button title="Checkout coming next" icon="lock" disabled />
+        <Text style={styles.deliveryNote}>
+          {overStock
+            ? "One of your items is over what the shop has left — reduce it to continue."
+            : "Delivery is worked out at checkout."}
+        </Text>
+        <Button
+          title="Checkout"
+          icon="arrow-right"
+          disabled={overStock}
+          onPress={() => router.push("/checkout")}
+        />
       </View>
     </View>
   );

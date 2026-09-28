@@ -47,7 +47,7 @@ class SearchRanker:
         """
         try:
             from apps.products.models import Product
-            from apps.businesses.models import BusinessStatus
+            from apps.businesses.choices import BusinessStatus
             from apps.ads.models import ProductPromotion
             from django.db.models import Q
             from django.utils import timezone

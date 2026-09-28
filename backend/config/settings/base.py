@@ -104,7 +104,12 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "media/"
+
+# The leading slash matters. Without it, a photo's .url comes back as
+# "media/products/rice.jpg" — a path relative to whatever endpoint asked for it —
+# so build_absolute_uri() turned it into /api/products/media/products/rice.jpg
+# and the app was sent to a URL that does not exist.
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -293,6 +298,12 @@ EMAIL_BACKEND = os.environ.get(
 )
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@smartmall.local")
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+
+# Where a payment gateway sends the customer once they're done. For the phone
+# app this is the app's own scheme (see `scheme` in mobile/app.json), so the
+# payment page closes and the app picks straight back up. A website front end
+# would point this at its own URL instead.
+PAYMENT_CALLBACK_URL = os.environ.get("PAYMENT_CALLBACK_URL", "checko://payment/callback")
 PASSWORD_RESET_FRONTEND_PATH = os.environ.get(
     "PASSWORD_RESET_FRONTEND_PATH",
     "/reset-password",
@@ -300,6 +311,7 @@ PASSWORD_RESET_FRONTEND_PATH = os.environ.get(
 
 # Payment Gateways
 PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY", "")
+PAYSTACK_BASE_URL = os.environ.get("PAYSTACK_BASE_URL", "")
 FLUTTERWAVE_SECRET_KEY = os.environ.get("FLUTTERWAVE_SECRET_KEY", "")
 FLUTTERWAVE_WEBHOOK_SECRET = os.environ.get("FLUTTERWAVE_WEBHOOK_SECRET", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")

@@ -6,7 +6,7 @@ from django.db import transaction
 from apps.businesses.models import Business
 from apps.businesses.choices import BusinessCategory, BusinessStatus
 from apps.cart.models import Cart, CartItem
-from apps.orders.models import CheckoutGroup, Order, OrderItem, OrderStatus
+from apps.orders.models import CheckoutGroup, FulfilmentType, Order, OrderItem, OrderStatus
 from apps.orders.services.stock_service import release_expired_holds, reserve_stock
 from apps.products.models import Product
 
@@ -122,8 +122,55 @@ def clear_cart(*, customer) -> None:
 
 # ─── Checkout ─────────────────────────────────────────────────────────────────
 
+def _resolve_fulfilment(*, shops, requested):
+    """
+    Work out delivery or pickup for each shop. Anything the customer didn't say
+    falls back to what the shop can actually do.
+    """
+    requested = {str(k): v for k, v in (requested or {}).items()}
+    choices = {}
+    for business_id, shop in shops.items():
+        asked = requested.get(str(business_id))
+        if asked is None:
+            choices[business_id] = (
+                FulfilmentType.DELIVERY if shop.delivers else FulfilmentType.PICKUP
+            )
+            continue
+        if asked not in (FulfilmentType.DELIVERY, FulfilmentType.PICKUP):
+            raise CartError(f"'{asked}' is not a delivery choice for {shop.name}.")
+        if asked == FulfilmentType.DELIVERY and not shop.delivers:
+            raise CartError(f"{shop.name} does not deliver — please choose pickup.")
+        choices[business_id] = asked
+    return choices
+
+
+def _check_delivery_details(*, choices, delivery):
+    """Delivery details are only needed when something is actually being delivered."""
+    if FulfilmentType.DELIVERY not in choices.values():
+        return {"recipient_name": "", "phone": "", "address": ""}
+
+    delivery = delivery or {}
+    cleaned = {
+        "recipient_name": (delivery.get("recipient_name") or "").strip(),
+        "phone": (delivery.get("phone") or "").strip(),
+        "address": (delivery.get("address") or "").strip(),
+    }
+    missing = [
+        label
+        for key, label in (
+            ("recipient_name", "a name"),
+            ("phone", "a phone number"),
+            ("address", "a delivery address"),
+        )
+        if not cleaned[key]
+    ]
+    if missing:
+        raise CartError("Please add " + " and ".join(missing) + " for the delivery.")
+    return cleaned
+
+
 @transaction.atomic
-def checkout_cart(*, customer) -> CheckoutGroup:
+def checkout_cart(*, customer, fulfilment=None, delivery=None) -> CheckoutGroup:
     """
     Convert the customer's cart into orders — ONE ORDER PER SHOP — grouped in a
     CheckoutGroup that the customer pays for with a single payment.
@@ -135,6 +182,14 @@ def checkout_cart(*, customer) -> CheckoutGroup:
 
     The stock is held for 30 minutes. If the orders are not paid in that time they
     are cancelled and the stock goes back to the same bucket.
+
+    `fulfilment` maps a shop id to "delivery" or "pickup". A shop left out (or the
+    whole argument left out) defaults to delivery if that shop delivers, otherwise
+    pickup. `delivery` carries where the goods are going:
+    {"recipient_name": ..., "phone": ..., "address": ...}. It is required as soon as
+    one shop is being delivered. Check-O runs no riders: each shop delivers itself
+    and its own fee is copied onto the order, so a later price change by the shop
+    never moves the amount the customer already agreed to.
     """
     cart = Cart.objects.prefetch_related(
         "items__product__business"
@@ -163,20 +218,40 @@ def checkout_cart(*, customer) -> CheckoutGroup:
 
     # --- Group cart lines by shop (keeps the order shops were added in) ---
     items_by_shop = {}
+    shops = {}
     for item in items:
         items_by_shop.setdefault(item.product.business_id, []).append(item)
+        shops[item.product.business_id] = item.product.business
+
+    choices = _resolve_fulfilment(shops=shops, requested=fulfilment)
+    delivery = _check_delivery_details(choices=choices, delivery=delivery)
 
     group = CheckoutGroup.objects.create(customer=customer, total=Decimal("0.00"))
     group_total = Decimal("0.00")
 
     for business_id, shop_items in items_by_shop.items():
+        shop = shops[business_id]
+        choice = choices[business_id]
+        delivering = choice == FulfilmentType.DELIVERY
+        fee = shop.delivery_fee if delivering else Decimal("0.00")
+
         order = Order.objects.create(
             customer=customer,
             business_id=business_id,
             checkout_group=group,
             status=OrderStatus.PENDING_PAYMENT,
             total=Decimal("0.00"),
+            fulfilment_type=choice,
+            delivery_fee=fee,
+            delivery_address=delivery["address"] if delivering else "",
+            recipient_name=delivery["recipient_name"] if delivering else "",
+            delivery_phone=delivery["phone"] if delivering else "",
         )
+        if not delivering:
+            order.generate_pickup_code()
+            order.set_pickup_deadline()
+            order.save(update_fields=["pickup_code", "pickup_deadline", "updated_at"])
+
         total = Decimal("0.00")
 
         # --- Hold stock (30-minute payment window) and create order lines ---
@@ -199,9 +274,11 @@ def checkout_cart(*, customer) -> CheckoutGroup:
             # main stock). Released automatically if unpaid after 30 minutes.
             reserve_stock(order=order, product=product, quantity=item.quantity)
 
-        order.total = total
+        # `total` is the whole amount charged for this shop, delivery included, so
+        # payments and refunds need no separate fee handling.
+        order.total = total + fee
         order.save(update_fields=["total", "updated_at"])
-        group_total += total
+        group_total += order.total
 
     group.total = group_total
     group.save(update_fields=["total", "updated_at"])

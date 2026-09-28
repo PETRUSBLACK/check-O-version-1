@@ -74,9 +74,6 @@ export default function Home() {
               </Text>
             </View>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Notifications" style={styles.bell}>
-            <Feather name="bell" size={21} color={colors.white} />
-          </Pressable>
         </View>
         <Text style={styles.hello}>
           {greeting()}
@@ -129,8 +126,8 @@ export default function Home() {
                 onPress={() => setCategory(c.value === category ? "" : c.value)}
                 style={styles.cat}
               >
-                <View style={[styles.catIcon, { backgroundColor: c.tint }, on && styles.catOn]}>
-                  <MaterialCommunityIcons name={c.icon} size={28} color={c.ink} />
+                <View style={[styles.catIcon, { backgroundColor: on ? colors.leaf : c.tint }]}>
+                  <MaterialCommunityIcons name={c.icon} size={28} color={on ? colors.white : c.ink} />
                 </View>
                 <Text style={[styles.catLabel, on && { color: colors.leaf, fontFamily: fonts.bodyBold }]}>{c.label}</Text>
               </Pressable>
@@ -197,14 +194,6 @@ const styles = StyleSheet.create({
   deliverTo: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.leafSoft },
   locRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
   locText: { flexShrink: 1, fontFamily: fonts.bodyBold, fontSize: 16, color: colors.white },
-  bell: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   hello: { fontFamily: fonts.displayBold, fontSize: 28, color: colors.white, letterSpacing: -0.6 },
   search: {
     height: 52,
@@ -250,7 +239,6 @@ const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", rowGap: 16 },
   cat: { width: "25%", alignItems: "center", gap: 8 },
   catIcon: { width: 64, height: 64, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  catOn: { borderWidth: 2, borderColor: colors.leaf },
   catLabel: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.ink },
   sectionHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   sectionTitle: { fontFamily: fonts.displayBold, fontSize: 19, color: colors.ink, letterSpacing: -0.2 },

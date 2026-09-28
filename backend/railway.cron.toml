@@ -1,0 +1,43 @@
+# Railway config for the BACKGROUND TASKS service.
+#
+# This is a second service, separate from the web service (railway.toml). Both
+# deploy the same repository; they differ only in what they run.
+#
+# Why separate: Railway runs a service's own start command on its cron schedule.
+# Putting a schedule on the web service would restart the web server every five
+# minutes. So the scheduled work needs a service of its own.
+#
+# What it does: cancels unpaid orders whose 30-minute window has passed and
+# returns their stock, expires pickup orders, reminds vendors sitting on paid
+# orders, deactivates finished promotions, renews subscriptions.
+#
+# Without this running, an abandoned payment holds a vendor's stock indefinitely
+# and she sees her goods as sold out with no idea why.
+#
+# ── Setting it up in Railway, once ───────────────────────────────────────────
+#   1. In the project, New → GitHub Repo → the same repository.
+#   2. Service Settings → Config-as-code file path: backend/railway.cron.toml
+#   3. Give it the same environment variables as the web service — it needs the
+#      same DATABASE_URL, or it will cheerfully do nothing to the real data.
+#   4. Confirm Settings → Cron Schedule shows */5 * * * *.
+#
+# Railway skips a run if the previous one is still going, and expects the process
+# to exit when finished — which this command does. Five minutes is also Railway's
+# minimum interval, which is exactly the cadence these tasks were written for.
+#
+# Alternative, if you would rather not run a cron service: set startCommand to
+#   python manage.py run_tasks --loop
+# and remove cronSchedule. That gives an always-on worker instead — the same shape
+# used in development. It costs more, because it never sleeps.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python manage.py run_tasks --scheduled"
+cronSchedule = "*/5 * * * *"
+
+# A scheduled run either works or it doesn't; the next one is five minutes away,
+# so there is nothing to gain from restarting a failed one.
+restartPolicyType = "never"

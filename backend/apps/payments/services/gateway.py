@@ -157,21 +157,28 @@ def initiate_payment(
     return payment, result.payment_url
 
 
-@transaction.atomic
 def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
     """
-    Called by the webhook handler after a successful payment notification.
+    Settle a payment: ask the gateway whether it really succeeded, and if so mark
+    the payment and its orders paid. Called both by the webhook handler and by
+    the app when the customer returns from the payment page.
 
-    1. Fetches the pending payment by external_ref
-    2. Calls the gateway to verify the transaction is genuinely successful
-    3. Marks the payment as SUCCESS
-    4. Transitions the order to PAID
+    Deliberately **not** wrapped in one big transaction:
 
-    Raises ValueError if payment not found, already processed, or gateway rejects.
+    - Asking the gateway is a network call that can take many seconds. Holding a
+      locked row across it would block everything else touching that payment.
+    - A failure has to be *recorded*. Marking it failed inside a transaction that
+      then raises would roll the marking back, leaving a dead payment looking
+      pending for ever.
+
+    So the gateway is asked outside any transaction, and each outcome is written
+    in its own.
+
+    Raises ValueError if the payment is unknown, already failed, or the gateway
+    says it did not succeed.
     """
     payment = (
         Payment.objects
-        .select_for_update()
         .select_related("order", "checkout_group")
         .filter(external_ref=external_ref, provider=provider)
         .first()
@@ -187,22 +194,47 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
     if payment.status == PaymentStatus.FAILED:
         raise ValueError(f"Payment ref={external_ref} is already marked as failed.")
 
-    # Verify with the gateway — don't just trust the webhook payload
+    # Verify with the gateway — don't just trust the webhook payload.
     gateway = get_gateway(provider)
     try:
         result = gateway.verify(external_ref=external_ref)
     except Exception as exc:
+        # A network wobble is not a failed payment: leave it pending so it can
+        # be checked again rather than condemning a payment that may have worked.
         logger.exception("gateway_verify_error provider=%s ref=%s", provider, external_ref)
         raise ValueError(f"Gateway verification failed: {exc}") from exc
 
     if not result.success:
-        _mark_failed(payment)
+        mark_payment_failed(provider=provider, external_ref=external_ref)
         raise ValueError(f"Gateway reported payment as unsuccessful for ref={external_ref}")
 
-    payment.status = PaymentStatus.SUCCESS
-    payment.save(update_fields=["status", "updated_at"])
+    # The amount was set by us when the payment started, so anything short means
+    # something is wrong — a tampered request, or the wrong reference. Never
+    # release goods for less than they cost.
+    if result.amount is not None and result.amount < payment.amount:
+        logger.error(
+            "payment_amount_short ref=%s expected=%s paid=%s",
+            external_ref, payment.amount, result.amount,
+        )
+        mark_payment_failed(provider=provider, external_ref=external_ref)
+        raise ValueError(
+            f"Paid amount {result.amount} is less than the {payment.amount} owed."
+        )
 
-    _mark_orders_paid(payment)
+    with transaction.atomic():
+        payment = (
+            Payment.objects.select_for_update()
+            .select_related("order", "checkout_group")
+            .get(pk=payment.pk)
+        )
+        # The webhook and the app can both arrive at once; whoever is second
+        # finds it already done and leaves the orders alone.
+        if payment.status == PaymentStatus.SUCCESS:
+            return payment
+
+        payment.status = PaymentStatus.SUCCESS
+        payment.save(update_fields=["status", "updated_at"])
+        _mark_orders_paid(payment)
 
     # Fire payment confirmed notification (once per payment)
     try:

@@ -1,12 +1,42 @@
 import axios, { AxiosError } from "axios";
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
-// Set EXPO_PUBLIC_API_URL in mobile/.env:
-//   Laptop on the same Wi-Fi → http://<your-laptop-IP>:8000/api
-//   Railway                  → https://<your-app>.up.railway.app/api
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000/api";
+// In development you normally need nothing: the phone already reached this laptop
+// to load the app, so Expo knows its address and we reuse it. That means a change
+// of Wi-Fi or hotspot — which changes the laptop's IP — fixes itself.
+//
+// Set EXPO_PUBLIC_API_URL in mobile/.env only to point somewhere else:
+//   Railway → https://<your-app>.up.railway.app/api
+// A value set there always wins, so remember to clear it when you go back to
+// running the backend on this laptop.
+
+/** The laptop address Expo served this app from, e.g. "10.197.207.129". */
+function devServerHost(): string | null {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as { platform?: { hostUri?: string } }).platform?.hostUri;
+  if (!hostUri) return null;
+  // hostUri looks like "10.197.207.129:8081" or "10.197.207.129:8081/path"
+  const host = hostUri.split("/")[0].split(":")[0];
+  if (!host || host === "localhost" || host === "127.0.0.1") return null;
+  return host;
+}
+
+function resolveBaseUrl(): string {
+  const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicit) return explicit;
+
+  const host = devServerHost();
+  if (host) return `http://${host}:8000/api`;
+
+  // Web preview, or a built app with nothing configured.
+  return "http://localhost:8000/api";
+}
+
+export const API_BASE_URL = resolveBaseUrl();
 
 const ACCESS = "access_token";
 const REFRESH = "refresh_token";
@@ -87,6 +117,12 @@ api.interceptors.response.use(
 export function errorMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
   const e = err as AxiosError<any>;
   if (!e?.response) {
+    // In development the cause is almost never the phone's internet — it's the
+    // backend not running, or running without `0.0.0.0`. Say which address failed
+    // so the next thing to check is obvious.
+    if (__DEV__) {
+      return `Can't reach the backend at ${API_BASE_URL}. Is it running with "python manage.py runserver 0.0.0.0:8000"?`;
+    }
     return "Can't reach Check-O. Check your internet connection.";
   }
   const data = e.response.data;

@@ -27,6 +27,9 @@ _VENDOR_TRANSITION_TARGETS = {
 def _vendor_fulfills_order(user, order: Order) -> bool:
     if getattr(user, "role", None) != "vendor":
         return False
+    if order.business_id:
+        return order.business.owner_id == user.id
+    # Orders created before one-order-per-shop: fall back to the line items.
     return OrderItem.objects.filter(order=order, product__business__owner=user).exists()
 
 

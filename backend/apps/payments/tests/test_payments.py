@@ -96,14 +96,19 @@ class PaymentInitiateTest(TestCase):
         }, format="json")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_vendor_cannot_initiate_payment(self):
+    def test_nobody_can_pay_for_someone_elses_order(self):
+        """
+        A vendor is allowed to buy things, so the rule isn't "vendors can't pay" —
+        it's "you can only pay for your own order". Another person's order simply
+        isn't there to be found.
+        """
         order = make_paid_order(self.customer, self.product)
         self.client.force_authenticate(self.vendor)
         res = self.client.post("/api/payments/initiate/", {
             "order_id": str(order.pk),
             "provider": "paystack",
         }, format="json")
-        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class PaymentConfirmTest(TestCase):

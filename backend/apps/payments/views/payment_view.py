@@ -31,8 +31,10 @@ class InitiatePaymentView(APIView):
         ),
     )
     def post(self, request):
-        if getattr(request.user, "role", None) != "customer":
-            return Response({"detail": "Only customers can initiate payment."}, status=status.HTTP_403_FORBIDDEN)
+        # Anyone signed in may pay for their own checkout. A shop owner is also a
+        # person who buys things, and the cart already lets them; refusing here
+        # would let them fill a cart they could never pay for. Ownership is
+        # checked below — you can only pay for your own checkout or order.
         order_id = request.data.get("order_id")
         checkout_group_id = request.data.get("checkout_group_id")
         provider = request.data.get("provider")

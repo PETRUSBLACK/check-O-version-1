@@ -63,12 +63,19 @@ class ProductViewSet(viewsets.ModelViewSet):
                 )
         product = create_product(
             business=business,
+            category=serializer.validated_data.get("category"),
             name=serializer.validated_data["name"],
             description=serializer.validated_data.get("description", ""),
             price=serializer.validated_data["price"],
             stock=serializer.validated_data.get("stock", 0),
             is_active=serializer.validated_data.get("is_active", True),
         )
+        # A shop that sets aside stock for Check-O should be able to say so while
+        # adding the product, rather than saving and then editing it again.
+        allocation = serializer.validated_data.get("smartmall_allocation")
+        if allocation is not None:
+            product.smartmall_allocation = allocation
+            product.save(update_fields=["smartmall_allocation", "updated_at"])
         output = self.get_serializer(product)
         return Response(output.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(output.data))
 

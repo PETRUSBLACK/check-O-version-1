@@ -35,6 +35,7 @@ export default function RootLayout() {
     Figtree_700Bold,
   });
   const status = useAuth((s) => s.status);
+  const user = useAuth((s) => s.user);
   const bootstrap = useAuth((s) => s.bootstrap);
 
   useEffect(() => {
@@ -50,6 +51,8 @@ export default function RootLayout() {
   if (!ready) return null;
 
   const signedIn = status === "signedIn";
+  // One app, two sides. A seller lands on their orders, not on shopping.
+  const selling = signedIn && user?.role === "vendor";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -61,10 +64,20 @@ export default function RootLayout() {
             <Stack.Screen name="register" />
             <Stack.Screen name="forgot-password" />
           </Stack.Protected>
-          <Stack.Protected guard={signedIn}>
+          <Stack.Protected guard={selling}>
+            <Stack.Screen name="(vendor)" />
+            <Stack.Screen name="vendor-order/[id]" />
+            <Stack.Screen name="vendor-product/[id]" />
+            <Stack.Screen name="vendor-product/new" />
+          </Stack.Protected>
+          <Stack.Protected guard={signedIn && !selling}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="shop/[id]" />
             <Stack.Screen name="product/[id]" />
+            <Stack.Screen name="order/[id]" />
+            <Stack.Screen name="checkout" />
+            <Stack.Screen name="order-placed" />
+            <Stack.Screen name="pay" />
             <Stack.Screen name="search" />
           </Stack.Protected>
         </Stack>

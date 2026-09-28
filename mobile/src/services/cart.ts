@@ -9,11 +9,28 @@ export interface CartItem {
   line_total: string;
 }
 
+/** A shop in the cart, and what it can do about delivery. */
+export interface CartShop {
+  id: string;
+  name: string;
+  delivers: boolean;
+  delivery_fee: string;
+}
+
 export interface Cart {
   id: string;
   items: CartItem[];
+  shops: CartShop[];
   total: string;
   item_count: number;
+}
+
+export type Fulfilment = "delivery" | "pickup";
+
+export interface DeliveryDetails {
+  recipient_name: string;
+  phone: string;
+  address: string;
 }
 
 export const cartService = {
@@ -40,7 +57,38 @@ export const cartService = {
     const { data } = await api.delete<Cart>(`/cart/remove/${productId}/`);
     return data;
   },
+
+  // POST /api/cart/checkout/ — one order per shop, one payment
+  async checkout(input: {
+    fulfilment: Record<string, Fulfilment>;
+    delivery?: DeliveryDetails;
+  }): Promise<CheckoutGroup> {
+    const { data } = await api.post<CheckoutGroup>("/cart/checkout/", input);
+    return data;
+  },
 };
+
+/** Mirrors apps/orders CheckoutGroupSerializer. */
+export interface CheckoutOrder {
+  id: string;
+  business: string;
+  business_name: string;
+  status: string;
+  items_total: string;
+  delivery_fee: string;
+  total: string;
+  fulfilment_type: Fulfilment;
+  pickup_code: string;
+  delivery_address: string;
+}
+
+export interface CheckoutGroup {
+  id: string;
+  total: string;
+  amount_due: string;
+  order_count: number;
+  orders: CheckoutOrder[];
+}
 
 /**
  * How many things are in the cart. The API's item_count is the number of lines,
@@ -56,6 +104,8 @@ export interface ShopGroup {
   businessName: string;
   items: CartItem[];
   total: number;
+  delivers: boolean;
+  deliveryFee: number;
 }
 
 export function groupByShop(cart: Cart): ShopGroup[] {
@@ -64,7 +114,15 @@ export function groupByShop(cart: Cart): ShopGroup[] {
     const id = item.product.business;
     let group = groups.get(id);
     if (!group) {
-      group = { businessId: id, businessName: item.product.business_name, items: [], total: 0 };
+      const shop = cart.shops?.find((s) => s.id === id);
+      group = {
+        businessId: id,
+        businessName: item.product.business_name,
+        items: [],
+        total: 0,
+        delivers: shop?.delivers ?? false,
+        deliveryFee: Number(shop?.delivery_fee ?? 0),
+      };
       groups.set(id, group);
     }
     group.items.push(item);

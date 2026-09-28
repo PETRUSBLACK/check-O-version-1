@@ -21,7 +21,9 @@ from .base_gateway import BaseGateway, InitiateResult, VerifyResult
 
 logger = logging.getLogger(__name__)
 
-PAYSTACK_BASE_URL = "https://api.paystack.co"
+# Overridable so the payment journey can be walked against a stand-in gateway
+# in development. Unset means the real Paystack.
+PAYSTACK_BASE_URL = getattr(settings, "PAYSTACK_BASE_URL", "") or "https://api.paystack.co"
 
 
 class PaystackGateway(BaseGateway):
@@ -49,7 +51,7 @@ class PaystackGateway(BaseGateway):
             # Unique per attempt, so a customer can retry a failed/abandoned payment
             "reference": f"SM-{order_id}-{secrets.token_hex(3)}",
             "metadata": {"order_id": str(order_id), "platform": "smartmall"},
-            "callback_url": f"{getattr(settings, 'FRONTEND_ORIGIN', '')}/payment/callback",
+            "callback_url": getattr(settings, "PAYMENT_CALLBACK_URL", "checko://payment/callback"),
         }
 
         try:

@@ -76,6 +76,7 @@ from apps.orders.views import (
 # ============================================================================
 
 from apps.payments.views import (
+    VerifyPaymentView,
     PaymentViewSet,
     InitiatePaymentView,
     MockConfirmPaymentView,
@@ -399,6 +400,7 @@ urlpatterns = [
 
     # Payments
     path("payments/initiate/", InitiatePaymentView.as_view(), name="payment-initiate"),
+    path("payments/<uuid:pk>/verify/", VerifyPaymentView.as_view(), name="payment-verify"),
     path("payments/<uuid:pk>/mock-confirm/", MockConfirmPaymentView.as_view(), name="payment-mock-confirm"),
     path("payments/webhooks/paystack/", PaystackWebhookView.as_view(), name="paystack-webhook"),
     path("payments/webhooks/flutterwave/", FlutterwaveWebhookView.as_view(), name="flutterwave-webhook"),

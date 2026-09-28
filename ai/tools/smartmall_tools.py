@@ -28,7 +28,7 @@ def search_products(query: str, max_price: float = None, lat: float = None, lng:
     django.setup()
 
     from apps.products.models import Product
-    from apps.businesses.models import BusinessStatus
+    from apps.businesses.choices import BusinessStatus
 
     qs = Product.objects.filter(
         is_active=True,
@@ -167,7 +167,7 @@ def get_recommendations(customer_id: str, lat: float = None, lng: float = None, 
     """Get personalised recommendations for a customer."""
     from apps.orders.models import Order
     from apps.products.models import Product
-    from apps.businesses.models import BusinessStatus
+    from apps.businesses.choices import BusinessStatus
 
     past_orders = Order.objects.filter(
         customer_id=customer_id

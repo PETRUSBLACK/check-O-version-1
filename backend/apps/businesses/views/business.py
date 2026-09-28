@@ -108,6 +108,15 @@ class BusinessViewSet(viewsets.ModelViewSet):
 
         return [IsAuthenticated()]
 
+    @action(detail=False, methods=["get"], url_path="mine")
+    def mine(self, request, *args, **kwargs):
+        """
+        The shops this seller owns, whatever their status — the seller app opens
+        on this, and needs to show a shop that is still awaiting approval.
+        """
+        shops = get_businesses().filter(owner=request.user).order_by("name")
+        return Response(BusinessDetailSerializer(shops, many=True, context={"request": request}).data)
+
     @action(detail=True, methods=["post"], url_path="submit-for-review")
     def submit_for_review(self, request, *args, **kwargs):
         business = self.get_object()

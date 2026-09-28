@@ -1,3 +1,48 @@
+# Local development with one command:
+#
+#     docker compose up
+#
+# Starts Postgres, Redis, the web server, and the background task worker. The
+# worker is the one that cancels unpaid orders after their 30 minutes and returns
+# the stock — without it, an abandoned payment holds a vendor's goods indefinitely.
+#
+# This mirrors production: on Railway the web service and the scheduled service are
+# the same split, so anything that works here should work there.
+#
+# Expo still runs on the host (`npx expo start -c` in mobile/) — it isn't in here,
+# because it needs to talk to your phone over your own network.
+#
+# Note: this uses Postgres, which is a DIFFERENT database from the SQLite file you
+# use outside Docker. Your seeded shops and orders do not follow you in.
+#
+# ORDER MATTERS when setting it up. `docker compose run` REPLACES the service's
+# command, so it does not run the `migrate` step that lives in the backend service's
+# own command below. Seeding first therefore fails against an unmigrated database
+# ("column users_user.phone_number does not exist"), and a Postgres volume left over
+# from an older version of the schema fails the same way.
+#
+# Start it, let it migrate, then seed:
+#
+#     docker compose down -v          # only if the volume holds an old schema
+#     docker compose up -d
+#     docker compose logs -f backend  # wait for "Listening on TCP address"
+#     docker compose run --rm backend python manage.py seed_demo --with-orders
+#     docker compose run --rm backend python manage.py createsuperuser
+#
+# `down -v` deletes the Docker Postgres volume only. backend/db.sqlite3 is not in
+# Docker and is never touched by any of this.
+
+# Both Django services must see exactly the same settings. Keeping them in one
+# place means the worker can't drift onto a different database than the web server
+# — which would leave it dutifully doing nothing to the real data.
+x-django-env: &django-env
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  DEBUG: "1"
+  SECRET_KEY: dev-only-change-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1,backend,0.0.0.0
+  DATABASE_URL: postgres://smartmall:smartmall@db:5432/smartmall
+  REDIS_URL: redis://redis:6379/0
+
 services:
   db:
     image: postgres:16-alpine
@@ -28,11 +73,7 @@ services:
       sh -c "python manage.py migrate --noinput &&
              daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     environment:
-      DEBUG: "1"
-      SECRET_KEY: dev-only-change-in-production
-      ALLOWED_HOSTS: localhost,127.0.0.1,backend
-      DATABASE_URL: postgres://smartmall:smartmall@db:5432/smartmall
-      REDIS_URL: redis://redis:6379/0
+      <<: *django-env
     volumes:
       - ./backend:/app
     ports:
@@ -42,6 +83,40 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # The image is slim and has no curl, so ask Python. This also tells the worker
+    # when it is safe to start: the server only answers once migrations have run.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/',timeout=4).status==200 else 1)"
+      interval: 10s
+      timeout: 6s
+      retries: 10
+      start_period: 40s
+
+  # The fourth process: what makes deadlines actually happen.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python manage.py run_tasks --loop
+    environment:
+      <<: *django-env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      # Wait for the web service to be answering, which means migrations are done.
+      # Starting first would only mean a failed first round — the loop survives
+      # that — but there is no reason to log an error on every fresh start.
+      backend:
+        condition: service_healthy
+    # If it dies, bring it back. An unpaid order going uncancelled is silent, so
+    # a dead worker is the kind of failure nobody notices until a vendor complains.
+    restart: unless-stopped
 
 volumes:
   smartmall_pg:

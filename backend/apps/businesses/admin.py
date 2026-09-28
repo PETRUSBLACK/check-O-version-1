@@ -1,8 +1,13 @@
+import re
+from decimal import Decimal
+
+from django import forms
 from django.contrib import admin
 from django.db.models import Count, Q
 
 from .models import (
     Business,
+    BusinessLocation,
     Branch,
     BusinessMember,
     BusinessHours,
@@ -13,6 +18,101 @@ from .models import (
     BusinessVerification,
     BusinessDocument,
 )
+
+
+# =========================================================
+# Where a shop is
+# =========================================================
+#
+# "Shops near you" works by measuring distance, so a shop has to have
+# coordinates or it never appears in the app. Nobody should be typing them by
+# hand, though: in the seller app the shop owner stands in their shop and taps
+# "Use my location", and the phone fills these in. Until that exists, paste a
+# Google Maps link or a "6.2003, 6.7331" pair into Coordinates below and the
+# two fields fill themselves.
+
+# Matches "6.2003, 6.7331" and the coordinates inside a Google Maps URL
+# (.../@6.2003,6.7331,17z  or  ?q=6.2003,6.7331  or  !3d6.2003!4d6.7331).
+_PAIR = re.compile(r"(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)")
+_GOOGLE_3D4D = re.compile(r"!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)")
+
+
+def parse_coordinates(text: str):
+    """Pull a latitude and longitude out of pasted text. None if there isn't one."""
+    if not text:
+        return None
+    match = _GOOGLE_3D4D.search(text) or _PAIR.search(text)
+    if not match:
+        return None
+    lat, lng = float(match.group(1)), float(match.group(2))
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    return lat, lng
+
+
+class BusinessLocationForm(forms.ModelForm):
+    coordinates = forms.CharField(
+        required=False,
+        label="Coordinates",
+        help_text=(
+            "Paste a Google Maps link, or \"6.2003, 6.7331\". "
+            "In Google Maps: right-click the shop, then click the numbers to copy them. "
+            "Fills latitude and longitude below."
+        ),
+        widget=forms.TextInput(attrs={"size": 60}),
+    )
+
+    class Meta:
+        model = BusinessLocation
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Either paste coordinates or type the numbers — don't demand both.
+        self.fields["latitude"].required = False
+        self.fields["longitude"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        pasted = parse_coordinates(cleaned.get("coordinates", ""))
+        if pasted:
+            # The model stores 7 decimal places — about a centimetre, far finer
+            # than any phone's GPS — so trim rather than letting a long decimal
+            # from a map URL fail validation.
+            cleaned["latitude"] = Decimal(f"{pasted[0]:.7f}")
+            cleaned["longitude"] = Decimal(f"{pasted[1]:.7f}")
+            self.errors.pop("latitude", None)
+            self.errors.pop("longitude", None)
+        elif cleaned.get("coordinates"):
+            raise forms.ValidationError(
+                "Couldn't find coordinates in that. Paste a Google Maps link, "
+                "or two numbers like 6.2003, 6.7331."
+            )
+        if cleaned.get("latitude") is None or cleaned.get("longitude") is None:
+            raise forms.ValidationError(
+                "This shop needs coordinates, or it won't show up in the app. "
+                "Paste a Google Maps link into Coordinates."
+            )
+        return cleaned
+
+
+class BusinessLocationInline(admin.StackedInline):
+    """Edited on the shop's own page — a shop and where it is belong together."""
+    model = BusinessLocation
+    form = BusinessLocationForm
+    can_delete = False
+    extra = 1
+    max_num = 1
+    verbose_name_plural = "Where this shop is"
+    fields = ("coordinates", "latitude", "longitude", "address", "city", "state", "country", "postal_code")
+
+
+@admin.register(BusinessLocation)
+class BusinessLocationAdmin(admin.ModelAdmin):
+    form = BusinessLocationForm
+    list_display = ("business", "address", "city", "state", "latitude", "longitude")
+    search_fields = ("business__name", "address", "city")
+    list_filter = ("state", "city")
 
 
 # =========================================================
@@ -27,14 +127,26 @@ class BusinessAdmin(admin.ModelAdmin):
         "owner",
         "status",
         "is_active",
+        "delivers",
+        "delivery_fee",
         "vendor_cancellations",
         "created_at",
     )
+
+    # Delivery is edited constantly while shops are being signed up, so make it
+    # changeable straight from the list.
+    list_editable = (
+        "delivers",
+        "delivery_fee",
+    )
+
+    inlines = [BusinessLocationInline]
 
     list_filter = (
         "category",
         "status",
         "is_active",
+        "delivers",
     )
 
     def get_queryset(self, request):

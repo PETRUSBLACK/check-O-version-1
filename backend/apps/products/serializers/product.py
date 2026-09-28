@@ -54,6 +54,27 @@ class ProductSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def validate(self, attrs):
+        """
+        The allocation endpoint refuses an allocation bigger than stock; a plain
+        PATCH must refuse it too, or the two ways in disagree.
+        """
+        allocation = attrs.get(
+            "smartmall_allocation",
+            self.instance.smartmall_allocation if self.instance else None,
+        )
+        stock = attrs.get("stock", self.instance.stock if self.instance else 0)
+        if allocation is not None and allocation > stock:
+            raise serializers.ValidationError(
+                {
+                    "smartmall_allocation": (
+                        f"You can't set aside {allocation} for Check-O when you only "
+                        f"have {stock} in the shop."
+                    )
+                }
+            )
+        return attrs
+
     def get_available_stock(self, obj) -> int:
         # The model owns this rule (min of stock and allocation) — don't repeat it here.
         return obj.available_stock

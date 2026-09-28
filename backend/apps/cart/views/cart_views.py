@@ -7,6 +7,7 @@ from drf_spectacular.utils import extend_schema
 from apps.cart.serializers import (
     AddToCartSerializer,
     CartSerializer,
+    CheckoutSerializer,
     UpdateCartItemSerializer,
 )
 from apps.cart.services.cart_service import (
@@ -105,20 +106,27 @@ class CheckoutView(APIView):
     permission_classes = [IsAuthenticated, IsShopper]
 
     @extend_schema(
-        request=None,
+        request=CheckoutSerializer,
         responses={201: CheckoutGroupSerializer},
         tags=["cart"],
         summary="Checkout: convert cart into one order per shop",
         description=(
             "Splits the cart into one Order per shop (status `pending_payment`), "
             "grouped in a checkout. Stock is held for 30 minutes. Cart is cleared. "
+            "Each delivering shop's own fee is added to that shop's order total. "
             "Next, call `POST /api/payments/initiate/` with `checkout_group_id` to "
             "pay for all the orders at once."
         ),
     )
     def post(self, request):
+        ser = CheckoutSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
         try:
-            group = checkout_cart(customer=request.user)
+            group = checkout_cart(
+                customer=request.user,
+                fulfilment=ser.validated_data.get("fulfilment"),
+                delivery=ser.validated_data.get("delivery"),
+            )
         except CartError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

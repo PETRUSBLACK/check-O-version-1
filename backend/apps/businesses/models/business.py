@@ -92,6 +92,20 @@ class Business(UUIDTimeStampedModel):
         default="",
     )
 
+    # Delivery: Check-O does not run riders. Each shop says whether it delivers
+    # and what it charges, and arranges the dispatch itself.
+    delivers = models.BooleanField(
+        default=False,
+        help_text="Does this shop deliver to customers in its area?",
+    )
+
+    delivery_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Flat fee this shop charges for delivery.",
+    )
+
     submitted_for_review_at = models.DateTimeField(
         null=True,
         blank=True,

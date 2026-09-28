@@ -66,6 +66,8 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
             "category_display",
             "avg_rating",
             "rating_count",
+            "delivers",
+            "delivery_fee",
             "tagline",
             "description",
             "logo",
@@ -156,6 +158,8 @@ class BusinessUpdateSerializer(serializers.ModelSerializer):
             "legal_name",
             "registration_number",
             "address",
+            "delivers",
+            "delivery_fee",
             "is_active",
         )
 

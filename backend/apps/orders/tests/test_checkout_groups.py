@@ -60,14 +60,30 @@ def make_product(business, name, price, stock=10, allocation=None):
     )
 
 
-def fake_gateway(ref="PSK-REF-1"):
+def fake_gateway(ref="PSK-REF-1", paid=None):
+    """
+    Stands in for Paystack. `paid` is what the gateway reports was charged — it
+    must match what was asked for, because a payment short of the total is
+    refused. `None` means "whatever the payment asked for", which is the normal
+    case; pass a number to test a mismatch.
+    """
     gw = MagicMock()
     gw.initiate.return_value = InitiateResult(
         external_ref=ref, payment_url="https://pay.example/x", provider_payload={}
     )
-    gw.verify.return_value = VerifyResult(
-        success=True, external_ref=ref, amount=Decimal("0"), provider_payload={}
-    )
+
+    def verify(*, external_ref):
+        amount = paid
+        if amount is None:
+            from apps.payments.models import Payment
+
+            payment = Payment.objects.filter(external_ref=external_ref).first()
+            amount = payment.amount if payment else Decimal("0")
+        return VerifyResult(
+            success=True, external_ref=external_ref, amount=amount, provider_payload={}
+        )
+
+    gw.verify.side_effect = verify
     return gw
 
 

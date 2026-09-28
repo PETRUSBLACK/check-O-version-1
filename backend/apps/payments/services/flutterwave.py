@@ -47,7 +47,7 @@ class FlutterwaveGateway(BaseGateway):
             "tx_ref": tx_ref,
             "amount": str(amount),
             "currency": currency,
-            "redirect_url": f"{getattr(settings, 'FRONTEND_ORIGIN', '')}/payment/callback",
+            "redirect_url": getattr(settings, "PAYMENT_CALLBACK_URL", "checko://payment/callback"),
             "customer": {
                 "email": email,
             },

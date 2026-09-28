@@ -10,6 +10,21 @@ from apps.orders.services.order_service import OrderFlowError, transition_order_
 from core.permissions import IsVendorOrAdmin
 
 
+def _may_fulfil(user, order: Order) -> bool:
+    """
+    The shop that owns the order, or an admin. Without this check any vendor
+    could move another shop's orders around.
+    """
+    if user.is_staff or getattr(user, "role", None) == "admin":
+        return True
+    if order.business_id:
+        return order.business.owner_id == user.id
+    # Orders created before one-order-per-shop: fall back to the line items.
+    from apps.orders.models import OrderItem
+
+    return OrderItem.objects.filter(order=order, product__business__owner=user).exists()
+
+
 class MarkReadyForPickupView(APIView):
     """Workflow: Vendor marks order as ready for customer pickup."""
     permission_classes = [IsAuthenticated, IsVendorOrAdmin]
@@ -19,6 +34,8 @@ class MarkReadyForPickupView(APIView):
         order = Order.objects.filter(pk=pk).first()
         if not order:
             return Response({"detail": "Order not found."}, status=404)
+        if not _may_fulfil(request.user, order):
+            return Response({"detail": "This is not your shop's order."}, status=403)
         if order.fulfilment_type != "pickup":
             return Response({"detail": "This order is not a pickup order."}, status=400)
         try:
@@ -42,6 +59,9 @@ class ConfirmPickupView(APIView):
         order = Order.objects.filter(pk=pk).first()
         if not order:
             return Response({"detail": "Order not found."}, status=404)
+
+        if not _may_fulfil(request.user, order):
+            return Response({"detail": "This is not your shop's order."}, status=403)
 
         if order.pickup_code != pickup_code:
             return Response({"detail": "Invalid pickup code."}, status=400)

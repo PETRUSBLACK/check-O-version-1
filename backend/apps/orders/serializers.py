@@ -17,13 +17,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     business_name = serializers.CharField(source="business.name", read_only=True, default=None)
+    items_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
     class Meta:
         model = Order
         fields = (
             "id", "customer", "business", "business_name", "checkout_group",
-            "status", "total", "items",
-            "fulfilment_type", "paid_at",
+            "status", "items_total", "delivery_fee", "total", "items",
+            "fulfilment_type",
+            "delivery_address", "recipient_name", "delivery_phone",
+            "pickup_code", "pickup_deadline",
+            "paid_at",
             "cancelled_at", "cancelled_by", "cancellation_reason", "cancellation_note",
             "refund_status",
             "created_at", "updated_at",
