@@ -81,18 +81,47 @@ marketplace with ten shops cannot route every action through you.
 - [ ] **[C]** Handle refunds against settlement — a shop that cancels after payment
       must not be paid out for that order.
 
-### 2b. Vendor self-registration
-- [ ] **[C]** A sign-up flow in the app: shop name, phone, address, category, and
-      whether they deliver, with a delivery fee. The API already accepts this; the
-      screen doesn't exist.
-- [ ] **[C]** A location picker so the vendor pins their own shop on a map rather
-      than trusting GPS, which is often wrong in Asaba.
-- [ ] **[C]** Vendors set and change their own delivery fee — admin-only today.
-- [ ] **[D] Decide the approval rule.** Shops have a `status` already. Do you
-      approve each one by hand? Require an RC number? Let them trade immediately
-      and remove bad ones? This decides how fast you can grow and how much risk
-      you carry.
-- [ ] **[C]** An admin queue for approving shops, if that's the answer.
+### 2b. Vendor self-registration — **DONE** (2026-10-02)
+**The approval rule, decided:** Petrus approves every shop before shoppers can
+see it. A new shop starts as `draft` and can add products, photos and prices
+while it waits, so the waiting is never dead time. No RC number is asked for —
+a trader in Ogbeogonogo market has none.
+
+```
+draft ──submit──▶ pending ──approve──▶ approved   (shoppers can see it)
+  ▲                  │
+  └───── reject ─────┘  with a reason the vendor reads word for word
+```
+
+- [x] **[C]** A sign-up flow in the app — `src/app/shop-setup.tsx`: shop name,
+      what they sell, phone, address, whether they deliver and the fee. Creates
+      the shop in one request.
+- [x] **[C]** "I'm standing in my shop — use my location" reads the GPS once and
+      pins the shop. Returns nothing rather than guessing: a shop pinned to the
+      middle of Asaba when it is on Okpanam Road sends customers to the wrong
+      place, so a failed read asks them to type the address instead.
+- [x] **[C]** Vendors set and change their own delivery fee.
+- [x] **[D]** The approval rule: Petrus approves by hand. Easy to loosen later,
+      hard to tighten.
+- [x] **[C]** An admin queue: bulk **Approve** and **Reject** actions on the
+      Business list, a "Still needs" column, and a reason box on rejection.
+- [x] **[C]** Everyone gets told: reviewers when a shop is submitted, the owner
+      when it is approved or rejected — with the reason.
+- [x] **[C]** My shop shows where a shop stands and a checklist of what is left,
+      so "Send my shop in" never just refuses.
+
+Fixed on the way through, both found by reading rather than by it breaking:
+- `register_business()` was called by the sign-up endpoint with
+  `tax_identifier=` — a field on `BusinessVerification`, not on `Business`. Any
+  vendor who signed up with shop details attached got a 500.
+- An **approved** shop could never be edited again, so a vendor could not correct
+  their own phone number or raise their delivery fee when fuel went up. Now only
+  the four fields that say what the shop *was approved as* are locked (name,
+  category, legal name, registration number).
+
+A note for later: a shop can still be edited while it is `pending`, so a review
+is of a moving target. Harmless at one or two shops a week; worth locking if
+Check-O ever has a queue.
 
 ### 2c. Notifications that arrive when the app is closed
 - [ ] **[D] Decide: push, or one SMS, or both?** Push is free and unlimited but
@@ -109,22 +138,37 @@ marketplace with ten shops cannot route every action through you.
 - [ ] **[C]** Tell the customer when their order expires unpaid. Right now it
       silently becomes cancelled.
 
-### 2d. Hosting
-- [ ] **[D] Decide where.** Render's free tier would carry a pilot (no card, but it
-      sleeps and takes ~60s to wake). Railway is better and costs a few dollars a
-      month. **Not AWS** — no spending cap by default, and your Channels code would
-      need rewriting for Lambda.
-- [ ] **[C]** Photo storage that survives a deploy — Cloudinary (free tier is
-      enough) or S3. **Required before any real vendor uploads**, because the
-      container disk is wiped on every deploy.
-- [ ] **[P]** Commit and push everything to GitHub. A week of changes are sitting
-      uncommitted.
-- [ ] **[C]** Check production settings, `ALLOWED_HOSTS`, CORS for the real domain.
-- [ ] **[P]** Create the scheduled-task service. Config is already written in
-      `backend/railway.cron.toml`. **Not optional** — without it an abandoned
-      payment holds a vendor's stock until another shopper happens along.
-- [ ] **[C]** Point the app at the deployed backend, and add the Paystack webhook
-      now that there is a public address.
+### 2d. Hosting — **the code is ready; the clicking is yours** (2026-10-02)
+**Decided: Render + Neon + Cloudinary + cron-job.org. Total cost ₦0.**
+Walkthrough with every value to paste: [`DEPLOY.md`](DEPLOY.md).
+
+- [x] **[D]** Where. Not Railway (costs money you do not have), not AWS (no
+      spending cap by default). The free combination avoids three traps: Render's
+      own free Postgres **expires after 30 days**, a free container's disk is
+      **wiped every deploy**, and the free tier affords **one** always-on service,
+      not two.
+- [x] **[C]** Photo storage that survives a deploy — Cloudinary in production,
+      local disk in development.
+- [x] **[C]** Production settings: `ALLOWED_HOSTS` now picks up the host's own
+      domain automatically (it only knew Railway's name, so on Render Django
+      would have answered 400 to every request), `CSRF_TRUSTED_ORIGINS` added so
+      admin login works behind a proxy, `STORAGES` replacing the
+      `STATICFILES_STORAGE` that Django 5.1 removed and 5.2 silently ignores, and
+      `conn_health_checks=True` so a sleeping Neon database does not hand dead
+      connections to shoppers.
+- [x] **[C]** The scheduler without a second service: `POST
+      /api/internal/run-tasks/`, called by a free external cron every 5 minutes.
+      One cron job runs the tasks **and** keeps the free service from falling
+      asleep, so there is no 60-second cold start either.
+- [x] **[C]** `render.yaml` at the repo root, so the setup is written down.
+- [x] **[C]** The app already reads `EXPO_PUBLIC_API_URL`, so pointing it at the
+      live backend is one line in `mobile/.env`.
+- [ ] **[P]** **Commit and push to GitHub.** Render deploys from Git, so nothing
+      above happens until this does. Check `git check-ignore -v backend/.env`
+      prints a line first — your Paystack secret must not go up.
+- [ ] **[P]** Follow DEPLOY.md: Neon → Cloudinary → Render → cron → point the app.
+- [ ] **[P]** Add the Paystack webhook, now that there is a public address.
+- [ ] **[P]** `createsuperuser` on the deployed server so you can approve shops.
 
 ---
 
@@ -181,9 +225,12 @@ If you only answer three questions, answer these — each one unblocks a whole
 milestone, and none of them is a coding question.
 
 1. **How do vendors get paid, and what is your cut?** (blocks M2a)
-2. **Who is allowed to open a shop, and who approves it?** (blocks M2b)
-3. **Will you spend a few dollars a month on hosting, or accept a 60-second cold
-   start on a free tier?** (blocks M2d)
+2. ~~Who is allowed to open a shop, and who approves it?~~ **Answered
+   2026-10-02:** anyone may open one, Petrus approves it. M2b is built.
+3. ~~Will you spend a few dollars a month on hosting, or accept a 60-second cold
+   start on a free tier?~~ **Answered 2026-10-02:** free tier, and the cold start
+   is gone — the cron that runs the background tasks is also the traffic that
+   keeps the service awake. So the only open decision left is **number 1**.
 
 ---
 

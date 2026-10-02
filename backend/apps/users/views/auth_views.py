@@ -23,13 +23,23 @@ logger = logging.getLogger(__name__)
 
 
 class VendorBusinessPayloadSerializer(serializers.Serializer):
+    """
+    Shop details a vendor may send along with sign-up. Optional — the app signs
+    the person up first and sets the shop up on its own screen afterwards, which
+    is how it can ask for GPS and a photo.
+
+    Only the name is required. A market trader in Asaba has no CAC certificate
+    and no tax number, and demanding one at the door would end Check-O's vendor
+    list at about three shops. `slug` is built from the name when left out.
+    """
+
     name = serializers.CharField(max_length=255)
-    slug = serializers.SlugField(max_length=255)
-    legal_name = serializers.CharField(max_length=255)
-    registration_number = serializers.CharField(max_length=128)
-    tax_identifier = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
+    slug = serializers.SlugField(max_length=255, required=False, allow_blank=True, default="")
+    category = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    legal_name = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    registration_number = serializers.CharField(max_length=128, required=False, allow_blank=True, default="")
     business_phone = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
-    address = serializers.CharField()
+    address = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -58,16 +68,21 @@ class RegisterSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
         user = User.objects.create_user(password=password, **validated_data)
         if user.role == UserRole.VENDOR and vendor_payload:
-            register_business(
-                owner=user,
-                name=vendor_payload["name"],
-                slug=vendor_payload["slug"],
-                legal_name=vendor_payload["legal_name"],
-                registration_number=vendor_payload["registration_number"],
-                tax_identifier=vendor_payload.get("tax_identifier") or "",
-                business_phone=vendor_payload.get("business_phone") or "",
-                address=vendor_payload["address"],
-            )
+            # No tax_identifier here: that field lives on BusinessVerification,
+            # not on Business, and passing it raised TypeError on every vendor
+            # sign-up that carried shop details.
+            kwargs = {
+                "owner": user,
+                "name": vendor_payload["name"],
+                "slug": vendor_payload.get("slug") or "",
+                "legal_name": vendor_payload.get("legal_name") or "",
+                "registration_number": vendor_payload.get("registration_number") or "",
+                "business_phone": vendor_payload.get("business_phone") or "",
+                "address": vendor_payload.get("address") or "",
+            }
+            if vendor_payload.get("category"):
+                kwargs["category"] = vendor_payload["category"]
+            register_business(**kwargs)
         return user
 
 

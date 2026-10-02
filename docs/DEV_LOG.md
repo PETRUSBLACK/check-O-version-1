@@ -27,6 +27,220 @@ Running record of changes, decisions and things to check. Newest first.
 
 ---
 
+## 2026-10-02 — Ready to go online, for free
+
+Everything from here depends on one thing that has not happened: a real shop
+owner in Asaba using Check-O. She cannot, because Check-O only runs on Petrus's
+wifi with his laptop open. This is the work that removes that.
+
+**Nothing costs money.** Neon (database), Render (backend), Cloudinary (photos),
+cron-job.org (scheduler). Three free accounts, no card.
+Full walkthrough: [`DEPLOY.md`](DEPLOY.md).
+
+### Three traps in the free tiers, and what was built around each
+
+**1. Render's own free Postgres expires 30 days after creation.** Use Neon
+instead — its free plan does not expire, 1 GB, and the compute sleeps to zero so
+an idle app costs nothing.
+
+But a sleeping database closes the connection from its end, and `base.py` was
+holding connections for 600 seconds (`conn_max_age=600`). Django would hand a
+dead connection to the next request and the shopper would get *"server closed the
+connection unexpectedly"* — intermittently, which is the hardest kind to chase.
+Fixed with `conn_health_checks=True`, which makes Django ping before reusing.
+
+**2. A free host wipes the container's disk on every deploy.** Product photos in
+`backend/media/` would vanish the next time Petrus pushed a change — silently,
+with the database still holding paths to files that no longer exist. So media now
+goes to Cloudinary in production (`CLOUDINARY_URL`), and local disk in
+development. With no `CLOUDINARY_URL` set, the server starts anyway and says so
+in the log rather than refusing to boot.
+
+**3. The free tier allows one always-on service, not two.** 750 instance hours a
+month against a month of about 730, and a free web service falls asleep after 15
+minutes of quiet with roughly a minute to wake — so the first customer of the
+morning would stare at a loading screen.
+
+That rules out a second worker service for the scheduler. Instead there is now
+`POST /api/internal/run-tasks/` (`backend/core/task_runner.py`), and a free
+external cron calls it every 5 minutes. **One cron job does two jobs**: it runs
+the background tasks, and it is traffic, which is what stops the service ever
+being quiet long enough to fall asleep.
+
+- Guarded by a shared secret in an `X-Task-Token` header, compared with
+  `secrets.compare_digest` — a plain `==` leaks a token one character at a time
+  to anyone patient enough to measure the response.
+- **Closed by default.** With `TASK_RUNNER_TOKEN` unset — every development
+  machine — it returns 503 and runs nothing. It cannot be left accidentally open.
+- Accepts GET as well as POST. By the book it should be POST only since it
+  mutates, but several free cron services will only issue a GET, and a scheduler
+  that cannot reach the endpoint is worse than an impure verb.
+- Each tier is wrapped separately and failures come back in a 200 body. A failing
+  daily subscription renewal must not stop unpaid orders being cancelled, and a
+  cron service's history shows you a status code and nothing else — so a 200
+  saying *which* tier failed beats a 500 saying "something".
+- The "which tiers are due" rule now lives in one place and the management
+  command imports it. Two copies would have drifted, and the symptom would have
+  been hourly tasks quietly running five times an hour.
+
+### A bug that had been live for months
+
+`prod.py` set **`STATICFILES_STORAGE`**, which **Django 5.1 removed outright**.
+On Django 5.2 the setting is simply ignored, so WhiteNoise has been serving
+uncompressed, unhashed static files the whole time. Replaced with the `STORAGES`
+dict, which also carries the Cloudinary wiring. (This was already on the cleanup
+list; it turns out it mattered more than "tidying".)
+
+Also in `prod.py`: `ALLOWED_HOSTS` only knew about Railway's domain variable, so
+on any other host Django would have answered **400 Bad Request to every single
+request** — which looks exactly like the app being broken. It now picks up
+Render's, Railway's or Fly's automatically. And `CSRF_TRUSTED_ORIGINS` was not set
+at all, which behind a TLS-terminating proxy means the admin login page takes the
+password and then refuses the form.
+
+### New files
+- `backend/core/task_runner.py` — the endpoint, and the shared tier rule
+- `backend/core/tests/test_task_runner.py` — 14 tests
+- `render.yaml` (repo root) — the Render service, written down rather than living
+  in one browser tab. Checked against Render's current Blueprint spec.
+- `docs/DEPLOY.md` — the walkthrough, with a troubleshooting table
+
+### Tests
+14 new, **369 passing**. The one worth knowing about proves the whole point end
+to end rather than with mocks: reserve stock, push the hold's `expires_at` into
+the past the way a customer closing the payment page does, POST to the endpoint,
+and assert the order is cancelled and the three bags of rice are back on the
+shelf.
+
+### Nothing to run locally
+No migration. `pip install -r requirements.txt` picks up `cloudinary` and
+`django-cloudinary-storage`, but nothing in development behaves differently:
+without `CLOUDINARY_URL` photos still go to `backend/media/`, and without
+`TASK_RUNNER_TOKEN` the new endpoint refuses everything.
+
+### The honest part
+The free tier is good enough to put Check-O in a shop owner's hands, which is the
+whole point of doing it. It is **not** good enough to launch to the public —
+sleeping, 750 hours, 1 GB. When a shop depends on it, Render's cheapest paid plan
+is the first money worth spending on this project.
+
+---
+
+## 2026-10-02 — A vendor can open their own shop, and Petrus approves it
+
+**The decision, first.** Check-O approves every shop before shoppers can see it.
+The sign-up screen has been promising exactly that ("we review every shop before
+it goes live") with nothing behind it, so this makes the promise true.
+
+Three reasons it went this way rather than letting shops trade immediately:
+there is no dispute process yet, so the only thing between a bad shop and
+Check-O's name is a person reading the form; it is easy to loosen later and hard
+to tighten; and at one or two shops a week it is not work.
+
+What a new shop is **not** asked for: a CAC registration number, a legal name, a
+tax identifier or a slug. A trader in Ogbeogonogo market has none of those, and
+asking would end the vendor list at about three shops. The slug is worked out
+from the shop name.
+
+```
+draft ──submit──▶ pending ──approve──▶ approved   (shoppers can see it)
+  ▲                  │
+  └───── reject ─────┘  with a reason the vendor reads word for word
+```
+
+A shop in `draft` can add products, photos and prices — all of it. It just does
+not appear in anyone's search results. The waiting is never dead time, and
+nothing in a vendor's setup is blocked on Petrus.
+
+### What is new
+
+**The app**
+- `mobile/src/app/shop-setup.tsx` — shop name, what you sell (eight plain-words
+  choices, not database categories), phone, address, do you deliver and the fee,
+  one line about the shop. Creates the shop in a single request. Doubles as the
+  edit screen afterwards.
+- **"I'm standing in my shop — use my location"** reads the GPS once and pins the
+  shop. `readCurrentPlace()` in `hooks/useUserLocation.ts` returns `null` rather
+  than falling back to the centre of Asaba the way the shopper's hook does. A
+  shop pinned to the middle of Asaba when it is actually on Okpanam Road sends
+  customers to the wrong place — so a failed read asks the vendor to type the
+  address instead.
+- **My shop** now answers one question: can customers see me, and if not, what is
+  stopping them? Each status is explained in the shop owner's words ("We're
+  looking at it", not "pending"), and a draft shop gets a checklist of what is
+  outstanding plus a **Send my shop in** button that only appears once there is
+  nothing left. A rejected shop shows the reason and a **Send it in again**.
+- The **Orders** tab — the first screen the seller app opens on — carries a banner
+  when the vendor has no shop, or a shop nobody can see yet. Otherwise they sit
+  looking at an empty order list wondering why nothing arrives.
+- **Products** tab points at setup too, instead of "once your shop is set up…".
+
+**The backend**
+- `missing_before_review()` in `apps/businesses/services/registration.py` — the
+  four things a reviewer actually needs: a phone that rings, an address, a pin on
+  the map, and at least one product for sale. Submitting without them is refused
+  **with the list**, and the same list is on the API as `missing_before_review`
+  so the app can print it as a checklist. Only the owner and staff get it, and
+  only while the shop is unapproved, so it costs no query on a shopper's page.
+  The "at least one product" rule is deliberate: an approved shop with an empty
+  shelf is a dead end for every shopper who taps it, and they do not come back.
+- Everyone gets told something. Reviewers when a shop is submitted; the owner
+  when it is approved; the owner **with the reason** when it is rejected. Every
+  notification is wrapped — a shop must still get approved even if the message
+  cannot be delivered. Silence is a nuisance, a failed approval locks a vendor
+  out of their own shop.
+- **Admin approval queue**: bulk **Approve selected shops** and **Reject selected
+  shops** actions on the Business list, a reason box on the way to rejecting (new
+  template `admin/businesses/reject_shops.html`), and a **Still needs** column so
+  an empty cell on a pending shop means nothing is stopping you.
+- `POST /api/businesses/` now accepts `delivers` and `delivery_fee`, so the app
+  creates a complete shop in one request instead of creating then patching.
+
+### Two bugs fixed on the way through, both found by reading
+
+1. **`register_business()` crashed on vendor sign-up.** The sign-up endpoint
+   called it with `tax_identifier=` — a field on `BusinessVerification`, not on
+   `Business`. Any vendor who signed up with shop details attached got a
+   `TypeError` and a 500. Latent only because the app has never sent that block;
+   it would have fired the first time it did.
+2. **An approved shop could never be edited again.** `BusinessUpdateSerializer`
+   refused *every* edit once status was `approved`, so a vendor could not correct
+   their own phone number, fix their address, or raise their delivery fee when
+   fuel went up. Now only the four fields that say what the shop *was approved
+   as* are locked — name, category, legal name, registration number — and an
+   unchanged value arriving in a PATCH does not count as a change, because apps
+   send whole forms back.
+
+### Tests
+32 new, **355 passing**. The ones that matter: an unfinished shop cannot be
+submitted and is told why; a rejection carries the reason; a rejected shop can be
+fixed and resubmitted and the stale complaint is cleared; approving twice is
+refused and the owner is not congratulated twice; another vendor cannot move my
+shop on the map; and the admin reject page actually renders, because a template
+only fails when someone loads it.
+
+### Nothing to run
+**No migration** — no model changed. Pull the files and restart the server.
+
+### Try it
+1. Sign out, **Create your account**, pick **I want to sell**, sign up.
+2. You land on Orders with a banner. Tap **Set up my shop**.
+3. Fill it in, tap **use my location** while standing anywhere, create the shop.
+4. Products tab → add a product.
+5. My shop → the checklist should be empty → **Send my shop in**.
+6. `http://127.0.0.1:8000/admin/businesses/business/` → tick it → **Approve
+   selected shops**. Check the notification arrives in the app.
+7. Then do it again and **Reject** one, to see the reason come through.
+
+### Still open
+- A shop can be edited while it is `pending`, so a review is of a moving target.
+  Harmless at one or two shops a week; worth locking if there is ever a queue.
+- `apps/businesses/api.py` is a **second, divergent `BusinessViewSet`** that
+  nothing routes, and `apps/users/auth_api.py` is a dead copy of the auth views.
+  Both are confusing to read next to the live ones. Cleanup, listed below.
+
+---
+
 ## 2026-10-02 — Low-stock warnings, and the vendor sets the number
 
 Petrus's suggestion. Three of the four pieces already existed and had never been
@@ -599,21 +813,22 @@ cancel themselves after 30 minutes as designed.
   tappable picker (choose your area / confirm GPS) — doing it with the checkout work, where the
   delivery address actually matters.
 - Old `mobile/src/services/cart.ts`, `orders.ts`, `ai.ts` send the wrong fields — replaced in stages 3–5.
-- Batch 3: move `ai/` and `ml/` inside `backend/` so AI works on Railway; set `ANTHROPIC_API_KEY`.
-- Cleanup: old `api.py` files, `config/settings.py`, `backend/management/`, unused `realtime/`,
-  numpy/pandas/scikit-learn in requirements, `STATICFILES_STORAGE` → `STORAGES` in prod.py.
+- Batch 3: move `ai/` and `ml/` inside `backend/` so AI works when deployed; set `ANTHROPIC_API_KEY`.
+- Cleanup: old `api.py` files (`apps/businesses/api.py` is a whole second BusinessViewSet that
+  nothing routes; `apps/users/auth_api.py` likewise), `config/settings.py`, `backend/management/`, unused `realtime/`,
+  numpy/pandas/scikit-learn in requirements. (`STATICFILES_STORAGE` → `STORAGES`: **done 2026-10-02**.)
 - Vendor "confirm before payment" feature (before real vendors).
-- Railway cron job: **config written 2026-09-26** (`backend/railway.cron.toml`).
-  Still has to be created as a second service in the Railway dashboard at deploy time.
+- ~~Railway cron job~~ — superseded 2026-10-02. `backend/railway.cron.toml` still works if
+  Check-O ever moves to Railway, but the free-tier route is the `/api/internal/run-tasks/`
+  endpoint plus an external cron. See DEPLOY.md step 5.
 - **Paystack live test** — the flow is built and proved against a stand-in gateway
   (2026-09-25). Still needs Petrus's `sk_test_` key in `backend/.env` and one real
   card run, including deliberately abandoning a payment and retrying.
-- Product photos: **done 2026-09-26.** Remaining piece is production storage —
-  `backend/media/` is wiped on every Railway deploy, so this needs Cloudinary or S3
-  before real vendors upload anything.
-- Vendor: shop **self-registration**, deliberately last.
+- ~~Product photos: production storage~~ — **done 2026-10-02.** Cloudinary in prod,
+  local disk in dev. Set `CLOUDINARY_URL` when deploying or the photos are lost.
+- ~~Vendor: shop self-registration~~ — **done 2026-10-02.**
 - "See my orders" on the order-placed screen lands on the Orders placeholder until stage 5.
-- Vendors can't set their own delivery fee from the app yet — admin only (stage 6).
+- ~~Vendors can't set their own delivery fee from the app~~ — **done 2026-10-02**, on the shop setup screen.
 - Shop page shows `Business.address`, which most vendors leave empty; the *location* address
   (used for distance) is a different field. Decide which one the shop page should show.
 - Product photos: done 2026-09-26 (see that entry).

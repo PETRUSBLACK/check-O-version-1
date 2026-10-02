@@ -2,23 +2,100 @@ import { api } from "../config/api";
 import { Order, OrderStatus } from "./orders";
 import { Product } from "./products";
 
-/** The shops this seller owns. */
+/**
+ * Where a shop stands. Only `approved` is visible to shoppers.
+ *
+ *   draft ──submit──▶ pending ──approve──▶ approved
+ *     ▲                  │
+ *     └───── reject ─────┘  with a reason the vendor can read and fix
+ */
+export type ShopStatus = "draft" | "pending" | "approved" | "rejected" | "suspended";
+
+/** The shops this seller owns. Mirrors BusinessDetailSerializer. */
 export interface MyShop {
   id: string;
   name: string;
   slug: string;
   category: string;
   category_display: string;
-  status: string;
+  status: ShopStatus;
   delivers: boolean;
   delivery_fee: string;
   address: string;
+  display_address: string;
+  business_phone: string;
+  tagline: string;
+  latitude: number | null;
+  longitude: number | null;
+  /** What this shop still has to fill in before it can be submitted. Empty = ready. */
+  missing_before_review: string[];
+  /** Why it was turned down, in the reviewer's own words. "" unless rejected. */
+  rejection_reason: string;
+  submitted_for_review_at: string | null;
+}
+
+/** What the app sends to create or change a shop. */
+export interface ShopChanges {
+  name?: string;
+  category?: string;
+  business_phone?: string;
+  address?: string;
+  tagline?: string;
+  delivers?: boolean;
+  delivery_fee?: string;
+}
+
+/** What POST /businesses/ hands back: the new id plus what was sent. */
+export interface CreatedShop extends ShopChanges {
+  id: string;
+}
+
+/** Where the shop physically is. The GPS is what puts it in "shops near you". */
+export interface ShopPlace {
+  latitude: number;
+  longitude: number;
+  city: string;
+  state: string;
+  /** The API calls it full_address; the column is `address`. */
+  full_address: string;
 }
 
 export const vendorService = {
   // GET /api/businesses/mine/ — this seller's shops, whatever their status
   async myShops(): Promise<MyShop[]> {
     const { data } = await api.get<MyShop[]>("/businesses/mine/");
+    return data;
+  },
+
+  // POST /api/businesses/ — sign a new shop up. It starts in draft, invisible
+  // to shoppers, and the vendor can fill it in at their own pace.
+  //
+  // The response is BusinessCreateSerializer, not the full shop: it carries the
+  // new id and the fields that were sent, and nothing else. Refetch "my-shops"
+  // for status, category_display or the readiness list.
+  async createShop(input: ShopChanges & { name: string; category: string }): Promise<CreatedShop> {
+    const { data } = await api.post<CreatedShop>("/businesses/", input);
+    return data;
+  },
+
+  // PATCH /api/businesses/{id}/
+  //
+  // BusinessUpdateSerializer echoes the changed fields and *not* the id, so the
+  // caller keeps hold of the id it already had rather than reading it back.
+  async updateShop(id: string, changes: ShopChanges): Promise<ShopChanges> {
+    const { data } = await api.patch<ShopChanges>(`/businesses/${id}/`, changes);
+    return data;
+  },
+
+  // POST /api/businesses/{id}/location/ — the pin on the map
+  async setPlace(id: string, place: ShopPlace): Promise<void> {
+    await api.post(`/businesses/${id}/location/`, place);
+  },
+
+  // POST /api/businesses/{id}/submit-for-review/
+  // Refused with a readable reason if the shop is not finished yet.
+  async submitForReview(id: string): Promise<MyShop> {
+    const { data } = await api.post<MyShop>(`/businesses/${id}/submit-for-review/`, {});
     return data;
   },
 
@@ -153,6 +230,52 @@ export interface ProductChanges {
   is_active?: boolean;
   /** Warn the shop once available stock falls to this number or below. */
   low_stock_threshold?: number;
+}
+
+/**
+ * How to show where a shop stands, in words a shop owner would use. "Pending"
+ * and "draft" mean nothing to someone who just signed up; "We're looking at it"
+ * and "Not finished yet" do.
+ */
+export function statusLook(shop: MyShop): {
+  label: string;
+  tone: "ok" | "waiting" | "bad" | "draft";
+  explain: string;
+} {
+  switch (shop.status) {
+    case "approved":
+      return {
+        label: "Open on Check-O",
+        tone: "ok",
+        explain: "Customers near you can see your shop and your products.",
+      };
+    case "pending":
+      return {
+        label: "We're looking at it",
+        tone: "waiting",
+        explain:
+          "Someone is checking your shop over. You'll get a message as soon as it's done. You can keep adding products while you wait.",
+      };
+    case "rejected":
+      return {
+        label: "Needs a change",
+        tone: "bad",
+        explain: shop.rejection_reason || "Something needs fixing before your shop can go live.",
+      };
+    case "suspended":
+      return {
+        label: "Paused",
+        tone: "bad",
+        explain: "Your shop is hidden from customers for now. Get in touch to sort it out.",
+      };
+    default:
+      return {
+        label: "Not finished yet",
+        tone: "draft",
+        explain:
+          "Your shop is only visible to you. Finish the list below and send it in, and we'll take a look.",
+      };
+  }
 }
 
 /** What the shop should understand about a product at a glance. */

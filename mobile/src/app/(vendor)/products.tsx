@@ -62,7 +62,15 @@ export default function VendorProducts() {
         <EmptyState
           icon="home"
           title="No shop yet"
-          body="Once your shop is set up on Check-O, your products live here."
+          body="Your products live here once you have a shop. Set it up first — it takes a few minutes."
+          action={
+            <Button
+              title="Set up my shop"
+              icon="plus"
+              onPress={() => router.push("/shop-setup")}
+              style={{ marginTop: 14, alignSelf: "stretch" }}
+            />
+          }
         />
       </View>
     );

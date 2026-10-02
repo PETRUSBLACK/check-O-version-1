@@ -11,8 +11,13 @@ Two shapes, same work:
     # Development (Windows has no cron) — leave it running in its own terminal
     python manage.py run_tasks --loop
 
-    # Production on Railway — a cron service runs this every 5 minutes and exits
+    # Production — a cron service runs this every 5 minutes and exits
     python manage.py run_tasks --scheduled
+
+In production on a free host there is a third shape that needs no worker service
+at all: an external cron calls POST /api/internal/run-tasks/ every 5 minutes,
+which runs exactly the same tiers and keeps the web service awake at the same
+time. See core/task_runner.py.
 
     # One-off, by hand
     python manage.py run_tasks --frequent
@@ -38,6 +43,8 @@ from datetime import timedelta, timezone as dt_timezone
 from django.core.management.base import BaseCommand, CommandError
 from django.db import close_old_connections
 from django.utils import timezone
+
+from core.task_runner import tiers_due_now
 
 LAGOS = dt_timezone(timedelta(hours=1))  # West Africa Time, no daylight saving
 
@@ -83,11 +90,13 @@ class Command(BaseCommand):
         run_daily = options["daily"] or options["all"]
 
         if options["scheduled"]:
-            # Stateless, and correct for a cron firing every 5 minutes.
-            now = timezone.now().astimezone(LAGOS)
+            # The same rule the cron endpoint uses, imported rather than copied:
+            # two versions of "is the hourly tier due" would eventually disagree,
+            # and the symptom would be tasks silently running five times an hour.
+            due = tiers_due_now()
             run_frequent = True
-            run_hourly = run_hourly or now.minute < 5
-            run_daily = run_daily or (now.hour == 0 and now.minute < 5)
+            run_hourly = run_hourly or due["hourly"]
+            run_daily = run_daily or due["daily"]
 
         if not any([run_frequent, run_hourly, run_daily]):
             self.stdout.write(

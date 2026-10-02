@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from rest_framework.views import APIView
 
+from core.task_runner import RunTasksView
+
 
 # ============================================================================
 # Users
@@ -326,6 +328,10 @@ urlpatterns = [
 
     # System
     path("health/", HealthView.as_view(), name="health"),
+    # The scheduler's way in. A free cron service calls this every 5 minutes,
+    # which both runs the background tasks and stops the free web service falling
+    # asleep. Guarded by the X-Task-Token header — see core/task_runner.py.
+    path("internal/run-tasks/", RunTasksView.as_view(), name="run-tasks"),
 
     # Authentication
     path("auth/register/", RegisterView.as_view(), name="auth-register"),

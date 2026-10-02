@@ -1,0 +1,63 @@
+# Check-O on Render's free tier.
+#
+# This file is optional — everything in it can be clicked in the dashboard, and
+# docs/DEPLOY.md walks through that. It is here so the setup is written down
+# rather than living only in one browser tab.
+#
+# To use it: Render dashboard → New → Blueprint → pick this repository. Render
+# reads this file and creates the service. Values marked sync:false it will ask
+# you for, so no secret is ever committed.
+#
+# What the free tier gives you, and what that means here:
+#
+#   750 instance hours a month. A month is about 730 hours, so ONE service can
+#   run continuously inside the allowance. That is why there is no second worker
+#   service — the scheduler runs through POST /api/internal/run-tasks/, called by
+#   an external cron every 5 minutes, which also stops the service falling asleep.
+#
+#   The disk is thrown away on every deploy. Product photos therefore go to
+#   Cloudinary (CLOUDINARY_URL), not to backend/media/.
+#
+#   Render's own free Postgres EXPIRES 30 DAYS AFTER CREATION. Do not use it.
+#   The database is Neon, whose free plan does not expire — hence no databases:
+#   section here, just a DATABASE_URL you paste in.
+
+services:
+  - type: web
+    name: checko-api
+    runtime: docker
+    plan: free
+    region: frankfurt # closest of Render's regions to Nigeria
+    rootDir: backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health/
+    autoDeployTrigger: commit
+
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+
+      # Long random string. Let Render generate it — then never change it, or
+      # every signed-in phone is logged out and every password-reset link dies.
+      - key: SECRET_KEY
+        generateValue: true
+
+      # The secret the cron service presents to /api/internal/run-tasks/.
+      # Render generates it; copy the value into the cron job's header.
+      - key: TASK_RUNNER_TOKEN
+        generateValue: true
+
+      # From Neon. postgresql://user:pass@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+
+      # From Cloudinary. cloudinary://<api_key>:<api_secret>@<cloud_name>
+      # Without this, every product photo is lost on the next deploy.
+      - key: CLOUDINARY_URL
+        sync: false
+
+      # From Paystack. Use sk_test_ until you are ready to take real money.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false

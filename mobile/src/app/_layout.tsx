@@ -69,6 +69,7 @@ export default function RootLayout() {
             <Stack.Screen name="vendor-order/[id]" />
             <Stack.Screen name="vendor-product/[id]" />
             <Stack.Screen name="vendor-product/new" />
+            <Stack.Screen name="shop-setup" />
           </Stack.Protected>
           <Stack.Protected guard={signedIn && !selling}>
             <Stack.Screen name="(tabs)" />

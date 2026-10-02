@@ -18,3 +18,8 @@ scikit-learn>=1.4
 pandas>=2.2
 whitenoise>=6.7
 anthropic>=0.25
+# Product photos. A free host wipes the container's disk on every deploy, so
+# media files have to live somewhere else. Cloudinary's free tier is enough for
+# a few hundred product photos.
+cloudinary>=1.40
+django-cloudinary-storage>=0.3

@@ -2,8 +2,18 @@ import re
 from decimal import Decimal
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.db.models import Count, Q
+from django.shortcuts import render
+
+from .choices import BusinessStatus
+from .services.registration import (
+    BusinessFlowError,
+    approve_business,
+    missing_before_review,
+    reject_business,
+)
 
 from .models import (
     Business,
@@ -119,19 +129,115 @@ class BusinessLocationAdmin(admin.ModelAdmin):
 # Business
 # =========================================================
 
+class RejectionForm(forms.Form):
+    """
+    Rejecting without a reason is worse than not rejecting at all: the vendor is
+    told no and has nothing to act on, so they either give up or submit exactly
+    the same shop again. The reason is sent to them word for word.
+    """
+
+    reason = forms.CharField(
+        label="What does this shop need to fix?",
+        widget=forms.Textarea(attrs={"rows": 4, "style": "width: 36em"}),
+        help_text="The vendor reads this exactly as you type it. Be specific.",
+    )
+
+
 @admin.register(Business)
 class BusinessAdmin(admin.ModelAdmin):
+    # Shops awaiting review come first — that is the whole reason to open this
+    # page most days. After that, newest first.
+    ordering = ("-created_at",)
+
     list_display = (
         "name",
         "category",
         "owner",
         "status",
+        "ready_for_review",
         "is_active",
         "delivers",
         "delivery_fee",
         "vendor_cancellations",
         "created_at",
     )
+
+    actions = ("approve_shops", "reject_shops")
+
+    @admin.display(description="Still needs")
+    def ready_for_review(self, obj):
+        """
+        For a shop that is not approved yet, what it is still missing. An empty
+        cell on a pending shop means there is nothing stopping you approving it.
+        """
+        if obj.status == BusinessStatus.APPROVED:
+            return "—"
+        outstanding = missing_before_review(obj)
+        if not outstanding:
+            return "Nothing"
+        return ", ".join(item.split(",")[0].lower() for item in outstanding)
+
+    @admin.action(description="Approve selected shops (they go live)")
+    def approve_shops(self, request, queryset):
+        done, refused = 0, []
+        for shop in queryset:
+            try:
+                approve_business(business_id=shop.pk)
+                done += 1
+            except BusinessFlowError as exc:
+                refused.append(f"{shop.name}: {exc}")
+
+        if done:
+            self.message_user(
+                request,
+                f"{done} shop(s) approved and told. Customers can see them now.",
+                messages.SUCCESS,
+            )
+        for line in refused:
+            self.message_user(request, line, messages.WARNING)
+
+    @admin.action(description="Reject selected shops (with a reason)")
+    def reject_shops(self, request, queryset):
+        """
+        Two steps: pick the shops, then type the reason on the next page. One
+        reason covers the batch, which is right — you reject a batch because
+        they share a problem.
+        """
+        if "apply" in request.POST:
+            form = RejectionForm(request.POST)
+            if form.is_valid():
+                reason = form.cleaned_data["reason"]
+                done, refused = 0, []
+                for shop in queryset:
+                    try:
+                        reject_business(business_id=shop.pk, reason=reason)
+                        done += 1
+                    except BusinessFlowError as exc:
+                        refused.append(f"{shop.name}: {exc}")
+
+                if done:
+                    self.message_user(
+                        request,
+                        f"{done} shop(s) rejected. The reason was sent to each owner.",
+                        messages.SUCCESS,
+                    )
+                for line in refused:
+                    self.message_user(request, line, messages.WARNING)
+                return None
+        else:
+            form = RejectionForm()
+
+        return render(
+            request,
+            "admin/businesses/reject_shops.html",
+            {
+                "shops": queryset,
+                "form": form,
+                "action_checkbox_name": ACTION_CHECKBOX_NAME,
+                "opts": self.model._meta,
+                "title": "Reject shops",
+            },
+        )
 
     # Delivery is edited constantly while shops are being signed up, so make it
     # changeable straight from the list.
@@ -185,10 +291,6 @@ class BusinessAdmin(admin.ModelAdmin):
     }
 
     date_hierarchy = "created_at"
-
-    ordering = (
-        "-created_at",
-    )
 
     list_select_related = (
         "owner",

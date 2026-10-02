@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+
+{# The page between picking shops to reject and the rejection happening. Its only
+   job is to collect a reason, because the reason is sent to the vendor word for
+   word and a rejection without one tells them nothing they can act on. #}
+
+{% block content %}
+  <h1>Reject {{ shops|length }} shop{{ shops|pluralize }}</h1>
+
+  <ul>
+    {% for shop in shops %}
+      <li><strong>{{ shop.name }}</strong> — {{ shop.owner.email }} ({{ shop.get_status_display }})</li>
+    {% endfor %}
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% for shop in shops %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ shop.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="reject_shops">
+
+    {{ form.as_p }}
+
+    <p>
+      <input type="submit" name="apply" value="Reject and tell them why" class="default">
+      <a href="../" class="button cancel-link">Cancel</a>
+    </p>
+  </form>
+{% endblock %}

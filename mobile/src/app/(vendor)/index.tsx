@@ -11,7 +11,7 @@ import { errorMessage } from "../../config/api";
 import { useStatusBar } from "../../hooks/useStatusBar";
 import { Order, ordersService, statusLook } from "../../services/orders";
 import { useAuth } from "../../store/auth";
-import { needsAction, nextAction } from "../../services/vendor";
+import { needsAction, nextAction, statusLook as shopStatusLook, vendorService } from "../../services/vendor";
 import { colors, fonts, naira } from "../../theme";
 
 type Filter = "todo" | "all";
@@ -23,6 +23,13 @@ export default function VendorOrders() {
   const [filter, setFilter] = useState<Filter>("todo");
 
   const orders = useQuery({ queryKey: ["vendor-orders"], queryFn: ordersService.list });
+
+  // A seller with no shop, or a shop nobody can see yet, will never get an order
+  // and should not be left staring at an empty list wondering why. This is the
+  // first screen the seller app opens on, so the nudge belongs here.
+  const shops = useQuery({ queryKey: ["my-shops"], queryFn: vendorService.myShops });
+  const firstShop = shops.data?.[0];
+  const notSellingYet = shops.isSuccess && (!firstShop || firstShop.status !== "approved");
 
   // Only orders this shop has to fulfil — a seller may also have bought things.
   const mine = useMemo(
@@ -74,6 +81,23 @@ export default function VendorOrders() {
             <Toggle label="To do" count={todo.length} on={filter === "todo"} onPress={() => setFilter("todo")} />
             <Toggle label="All orders" count={mine.length} on={filter === "all"} onPress={() => setFilter("all")} />
           </View>
+
+          {notSellingYet ? (
+            <View style={{ paddingHorizontal: 20, gap: 10, paddingBottom: 4 }}>
+              <Banner tone="warning" icon="home">
+                {!firstShop
+                  ? "You haven't set your shop up yet, so customers can't find you."
+                  : shopStatusLook(firstShop).explain}
+              </Banner>
+              <Button
+                title={!firstShop ? "Set up my shop" : "Go to my shop"}
+                icon={!firstShop ? "plus" : "arrow-right"}
+                onPress={() =>
+                  router.push(!firstShop ? "/shop-setup" : "/(vendor)/shop")
+                }
+              />
+            </View>
+          ) : null}
 
           {orders.isError ? (
             <View style={{ paddingHorizontal: 20, gap: 12 }}>

@@ -28,6 +28,40 @@ def make_business(owner, name="Test Shop", slug="test-shop", status=BusinessStat
     )
 
 
+def finish_setting_up(business):
+    """
+    Fill in everything a shop needs before a human can review it: a phone to
+    call, an address, a pin on the map and something to sell. Submitting is
+    refused without these, so any test about submitting has to do this first.
+    """
+    from decimal import Decimal
+
+    from apps.businesses.models import BusinessLocation
+    from apps.products.models import Product
+
+    business.business_phone = "08031234567"
+    business.address = "12 Nnebisi Road, Asaba"
+    business.save(update_fields=["business_phone", "address", "updated_at"])
+
+    BusinessLocation.objects.update_or_create(
+        business=business,
+        defaults={
+            "address": "12 Nnebisi Road, Asaba",
+            "city": "Asaba",
+            "state": "Delta",
+            "latitude": Decimal("6.2003000"),
+            "longitude": Decimal("6.7331000"),
+        },
+    )
+
+    Product.objects.get_or_create(
+        business=business,
+        name="Something to sell",
+        defaults={"price": Decimal("1500.00"), "stock": 10, "is_active": True},
+    )
+    return business
+
+
 class BusinessModelTest(TestCase):
 
     def test_business_has_uuid_pk(self):
@@ -143,12 +177,29 @@ class BusinessWorkflowTest(TestCase):
 
     def test_vendor_can_submit_draft_for_review(self):
         vendor = make_vendor()
-        business = make_business(vendor, status=BusinessStatus.DRAFT)
+        business = finish_setting_up(make_business(vendor, status=BusinessStatus.DRAFT))
         self.client.force_authenticate(vendor)
         res = self.client.post(f"/api/businesses/{business.pk}/submit-for-review/")
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         business.refresh_from_db()
         self.assertEqual(business.status, BusinessStatus.PENDING)
+
+    def test_an_unfinished_shop_cannot_be_submitted(self):
+        """
+        A shop with no phone number and nothing for sale wastes the reviewer's
+        time and the vendor's. Refuse it, and say what is missing rather than
+        just "invalid".
+        """
+        vendor = make_vendor()
+        business = make_business(vendor, status=BusinessStatus.DRAFT)
+        self.client.force_authenticate(vendor)
+        res = self.client.post(f"/api/businesses/{business.pk}/submit-for-review/")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        detail = res.data["detail"].lower()
+        self.assertIn("phone", detail)
+        self.assertIn("product", detail)
+        business.refresh_from_db()
+        self.assertEqual(business.status, BusinessStatus.DRAFT)
 
     def test_admin_can_approve_pending_business(self):
         vendor = make_vendor()
@@ -204,13 +255,50 @@ class BusinessWorkflowTest(TestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_200_OK)
 
-    def test_vendor_cannot_edit_approved_business(self):
+    def test_an_approved_shop_can_still_fix_its_own_details(self):
+        """
+        Approval is not a freeze. Phone numbers change, fuel goes up and the
+        delivery fee goes with it, and a shop that cannot correct its own
+        address is a shop customers cannot find.
+        """
         vendor = make_vendor()
         business = make_business(vendor, status=BusinessStatus.APPROVED)
         self.client.force_authenticate(vendor)
         res = self.client.patch(
             f"/api/businesses/{business.pk}/",
-            {"address": "Sneaky update"},
+            {"address": "14 Nnebisi Road, Asaba", "delivery_fee": "800.00"},
             format="json",
         )
-        self.assertIn(res.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_400_BAD_REQUEST])
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        business.refresh_from_db()
+        self.assertEqual(business.address, "14 Nnebisi Road, Asaba")
+        self.assertEqual(str(business.delivery_fee), "800.00")
+
+    def test_an_approved_shop_cannot_change_what_it_was_approved_as(self):
+        """
+        The shop was reviewed as a restaurant called Test Shop. It must not
+        become a pharmacy afterwards without anyone looking again.
+        """
+        vendor = make_vendor()
+        business = make_business(vendor, status=BusinessStatus.APPROVED)
+        self.client.force_authenticate(vendor)
+        res = self.client.patch(
+            f"/api/businesses/{business.pk}/",
+            {"category": BusinessCategory.PHARMACY},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        business.refresh_from_db()
+        self.assertEqual(business.category, BusinessCategory.RESTAURANT)
+
+    def test_sending_the_same_name_back_unchanged_is_not_an_edit(self):
+        """Apps PATCH whole forms. An unchanged value must not read as a change."""
+        vendor = make_vendor()
+        business = make_business(vendor, status=BusinessStatus.APPROVED)
+        self.client.force_authenticate(vendor)
+        res = self.client.patch(
+            f"/api/businesses/{business.pk}/",
+            {"name": business.name, "tagline": "Open till 8"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)

@@ -80,6 +80,15 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
+# conn_max_age keeps a connection open between requests instead of paying the
+# handshake every time — worth a lot when the database is in another country.
+#
+# conn_health_checks is what makes that safe. A free serverless Postgres (Neon,
+# Supabase) puts its compute to sleep after about 5 minutes of quiet, which
+# closes the connection from its end. Django does not notice, hands the dead
+# connection to the next request and the shopper gets "server closed the
+# connection unexpectedly" — intermittently, which is the worst kind. With health
+# checks on, Django pings the connection first and reconnects if it has gone.
 DATABASES = {
     "default": dj_database_url.config(
         default=os.environ.get(
@@ -87,6 +96,7 @@ DATABASES = {
             f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         ),
         conn_max_age=600,
+        conn_health_checks=True,
     ),
 }
 
@@ -277,6 +287,11 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+
+# The shared secret a cron service presents to POST /api/internal/run-tasks/.
+# Unset means the endpoint refuses everything, which is what every development
+# machine wants: no token, no open door. See core/task_runner.py.
+TASK_RUNNER_TOKEN = os.environ.get("TASK_RUNNER_TOKEN", "")
 
 _redis_url = os.environ.get("REDIS_URL")
 if _redis_url:
