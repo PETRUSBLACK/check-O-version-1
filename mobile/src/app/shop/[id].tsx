@@ -98,11 +98,14 @@ export default function ShopScreen() {
                 </>
               ) : null}
             </View>
-            {shop.data?.address ? (
+            {/* display_address, not address: the backend picks whichever of its two
+                address fields the vendor actually filled in. Showing `address` alone
+                left shops that had only set a location with no address at all. */}
+            {shop.data?.display_address ? (
               <View style={styles.addressRow}>
                 <Feather name="map-pin" size={14} color={colors.muted} />
                 <Text style={styles.address} numberOfLines={2}>
-                  {shop.data.address}
+                  {shop.data.display_address}
                 </Text>
               </View>
             ) : null}

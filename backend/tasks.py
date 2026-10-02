@@ -179,6 +179,20 @@ def expire_unpaid_orders():
     return count
 
 
+def warn_shops_about_low_stock():
+    """
+    Tell each shop about items that have just fallen to or below their low-stock
+    threshold. One message per shop, once per fall — never repeated while the item
+    stays low, and only again after it has been restocked and falls once more.
+    Run every 5 minutes.
+    """
+    from apps.products.services.low_stock import check_low_stock
+
+    count = check_low_stock()
+    logger.info("task_low_stock shops_notified=%d", count)
+    return count
+
+
 VENDOR_REMINDER_AFTER_HOURS = 2
 
 
@@ -236,6 +250,9 @@ def run_all_frequent_tasks():
     expire_unpaid_orders()
     remind_vendors_waiting()
     expire_pickup_orders()
+    # After the expiries: a cancelled order returns its stock, so a product that
+    # looked low a moment ago may not be any more.
+    warn_shops_about_low_stock()
 
 
 def run_all_hourly_tasks():

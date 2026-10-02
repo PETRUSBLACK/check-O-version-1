@@ -8,7 +8,7 @@ Running record of changes, decisions and things to check. Newest first.
 
 ---
 
-## ⚠️ REMEMBER — Wednesday Paystack test (Week 2)
+## ⚠️ REMEMBER — Paystack notes (first live-key payment done 2026-09-30)
 
 - **Each payment attempt now gets its own Paystack reference**
   (`SM-<checkout-or-order-id>-<random>`). Before this, if a customer closed the
@@ -24,6 +24,133 @@ Running record of changes, decisions and things to check. Newest first.
 - Partial refunds: if one shop in a multi-shop checkout cancels after payment,
   refund **only that shop's order total** in the Paystack dashboard (see
   Admin → Orders → *Refunds to process*), then click *Mark as refunded*.
+
+---
+
+## 2026-10-02 — Low-stock warnings, and the vendor sets the number
+
+Petrus's suggestion. Three of the four pieces already existed and had never been
+connected: a `low_stock_threshold` on every product, an `InventoryAlert` model with
+its own threshold and notification switches, and the vendor product list already
+marking anything at 5 or under in amber. **Nothing ever checked.** Another table
+built and walked away from, like `ProductVariant`.
+
+Now `warn_shops_about_low_stock()` runs with the other five-minute tasks — in the
+`run_tasks --loop` terminal, and on the Railway cron service when it exists.
+
+**Two rules do the real work**, and they are the difference between useful and
+muted:
+
+- **Once per fall, not once per check.** The checker runs every five minutes, so
+  without state a shop would get the same message 288 times a day. A new
+  `Product.low_stock_notified_at` records when the shop was told; it is cleared
+  only when the item is restocked *above* its threshold, so the next fall speaks
+  again. Clearing happens before detecting, so a restock-then-fall inside one
+  interval is still reported.
+- **One message per shop, not one per product.** A shop restocking on Fridays
+  might have eight items low at once. Eight notifications is noise; one saying
+  "8 items are running low — Beans: none left · Rice: 2 left · Oil: 3 left · and
+  5 more" is a to-do list. Emptiest named first, because that's the order to act in.
+
+Wording follows the situation: one item low says "Rice is running low", one at zero
+says "Rice has finished", all of them at zero says "3 items have finished".
+
+**What counts as low is `available_stock`** — the same number a shopper sees. A shop
+with 40 bags but only 3 set aside for Check-O is low *on Check-O*, and that is the
+portion that can vanish without her noticing.
+
+### The vendor sets the number
+Five was the default for everything, which is nearly empty for sachet water and
+plenty for generators — a single default can only be wrong for most products. The
+product form now has **"Warn me when only this many are left"**, blank meaning keep
+the usual five. `low_stock_threshold` was already in the API and already hidden from
+shoppers; it just had no field.
+
+Of the two thresholds in the database, `Product.low_stock_threshold` is now the one
+that matters. `InventoryAlert.threshold` is still there, still unused, and should
+probably go — its per-product email/in-app switches are the only thing it adds.
+
+### Verified
+12 new tests in `apps/products/tests/test_low_stock.py`, 323 in total. The ones
+worth knowing: it does not repeat while an item stays low; it speaks again after a
+restock and another fall; eight low items produce one message; a hidden product and
+an unapproved shop are ignored; and two shops never see each other's items.
+
+### Honest limit
+This reaches a vendor **only while the app is open**, because `notify()` writes a row
+and pushes over a WebSocket. A shop owner who has closed Check-O learns nothing
+until she opens it. The detection is the hard part and it is done — the day push
+notifications land (M2c in `ROADMAP.md`), this starts arriving on a locked phone
+with no further work here.
+
+### Still open from today
+The **allocation display** is wrong whichever way it is read. The code treats shop
+stock and the Check-O allocation as two separate pools, so a sale reduces only the
+allocation — but the form's line says "12 on Check-O · 28 for your shop" (40 − 12),
+which assumes one shared pile, and that number goes *up* to 31 after Check-O sells
+3. Petrus chose to keep the current code, which means the display and the
+explanatory text both need rewriting to describe two pools. Not done: the wording
+is a decision, not a fix.
+
+---
+
+## 2026-09-30 — A payment went all the way through
+
+**The first real end-to-end payment in Check-O.** Five days after the code was
+written, and the money path is finally proved with Petrus's own Paystack account
+rather than a stand-in.
+
+Verified in the database, not just on screen:
+
+```
+payment  paystack  success  N82,500   SM-3f4452ed-...-ff1962
+  created 14:32:55   confirmed 14:34:11
+order    Bright Electronics  paid   N82,500   paid_at set   pickup code SM-9817
+  orders total N82,500  ==  payment amount N82,500
+reservation  qty 11 from stock:  confirmed=True  released=False
+```
+
+Every link held: order created → Paystack charged → app returned → backend asked
+Paystack → order flipped to paid → stock committed rather than merely held.
+
+Worth recording what took five days, because almost none of it was Check-O.
+`expo-web-browser` and `expo-image-picker` each declared in `package.json` but not
+installed (Metro fails the *whole* bundle on one missing package, so an optional
+photo feature stopped the app starting). Docker Desktop not running. A Postgres
+volume from May with an old schema. Then containers left running 37 hours holding
+port 8000 — `restart: unless-stopped` doing its job too well — so a health check
+answered "ok" from a container with an empty database while the phone got nowhere.
+Lesson for the log: **`docker compose down` when finished, and when the app can't
+reach the backend, check what is actually listening on 8000 before anything else.**
+
+### Also today
+
+- **Cart button: "Checkout" → "Continue."** Petrus went looking for a separate
+  "place order" step because the button and the next screen were both called
+  Checkout, which read as though checking out had already happened. The note under
+  it now says "You'll choose delivery or collection next."
+- Photos remain **switched off**: `expo-image-picker` was never installed, so the
+  `PhotoPicker` import in `vendor-product/[id].tsx` is commented out with
+  instructions to re-enable. One `npx expo install` and two uncommented lines.
+- **Product variants** (colour, size) raised as a gap. Recorded in
+  `FUTURE_FEATURES.md` under "Core shopping — known gaps", with the finding that
+  the `ProductVariant` model exists but is wired to nothing, and the reasoning for
+  not building it yet.
+
+### Still untested
+- **Declined** and **bank authorisation** on Paystack's test simulator. Declined
+  matters: the order must stay unpaid with stock still held, and the app must offer
+  a retry. That is the family of bug already fixed once in `gateway.py`.
+- A **two-shop** payment. Today's was one shop, collection only — so the per-shop
+  delivery fee and the split into two orders under one payment are still unproven
+  against real Paystack.
+
+### Next
+1. Turn photos on (one command).
+2. **Deploy to Railway** — removes the laptop IP, the port conflicts, the second
+   terminal and Docker all at once, and gives Paystack a real webhook address.
+3. One real Asaba shop trading for a week. Still the most important thing, and
+   still not a coding task.
 
 ---
 

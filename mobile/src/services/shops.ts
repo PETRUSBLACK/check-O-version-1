@@ -49,7 +49,14 @@ export interface ShopDetail {
   logo: string | null;
   cover_image: string | null;
   business_phone: string;
+  /** What the vendor typed on the business form. Often blank — prefer display_address. */
   address: string;
+  /**
+   * The address to actually show a customer. The backend picks between the two it
+   * holds: the shop's location (the one tied to the GPS used for distance) if set,
+   * otherwise the business form's address. Empty string when neither is filled.
+   */
+  display_address: string;
 }
 
 export const shopsService = {

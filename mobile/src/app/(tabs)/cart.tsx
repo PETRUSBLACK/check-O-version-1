@@ -133,10 +133,13 @@ export default function Cart() {
         <Text style={styles.deliveryNote}>
           {overStock
             ? "One of your items is over what the shop has left — reduce it to continue."
-            : "Delivery is worked out at checkout."}
+            : "You'll choose delivery or collection next."}
         </Text>
+        {/* "Continue" rather than "Checkout": the next screen is also called
+            Checkout, so the old label read as though checking out had already
+            happened, and people looked for a separate "order" step. */}
         <Button
-          title="Checkout"
+          title="Continue"
           icon="arrow-right"
           disabled={overStock}
           onPress={() => router.push("/checkout")}

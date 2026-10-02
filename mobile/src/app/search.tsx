@@ -1,7 +1,7 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,18 @@ import { useStatusBar } from "../hooks/useStatusBar";
 import { productsService } from "../services/products";
 import { colors, fonts, naira } from "../theme";
 
+/**
+ * How long to wait after the last keystroke before asking the server.
+ *
+ * Not zero: searching on every letter would send a request per keystroke, and in
+ * Asaba the customer pays for that data. 350ms is long enough that typing
+ * "groundnut" is one search rather than nine, and short enough to feel immediate.
+ */
+const PAUSE_MS = 350;
+
+/** One letter matches almost everything, which is a slow way to learn nothing. */
+const MIN_LETTERS = 2;
+
 export default function Search() {
   useStatusBar("dark");
   const insets = useSafeAreaInsets();
@@ -19,11 +31,25 @@ export default function Search() {
   const [text, setText] = useState(params.q ?? "");
   const [q, setQ] = useState(params.q ?? "");
 
+  // Search as they type, once they stop for a moment.
+  useEffect(() => {
+    const trimmed = text.trim();
+    if (trimmed === q) return;
+    const timer = setTimeout(() => setQ(trimmed), PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [text, q]);
+
   const results = useQuery({
     queryKey: ["search", q],
     queryFn: () => productsService.list({ search: q }),
-    enabled: q.length > 0,
+    enabled: q.length >= MIN_LETTERS,
+    // Keep the previous results on screen while the next ones load. Without this
+    // the list empties on every new letter, which reads as "nothing found".
+    placeholderData: keepPreviousData,
   });
+
+  const searching = q.length >= MIN_LETTERS && results.isFetching;
+  const tooShort = text.trim().length > 0 && text.trim().length < MIN_LETTERS;
 
   return (
     <View style={[styles.page, { paddingTop: insets.top + 12 }]}>
@@ -37,17 +63,38 @@ export default function Search() {
             accessibilityLabel="Search products"
             value={text}
             onChangeText={setText}
+            // Pressing search skips the wait rather than doing nothing.
             onSubmitEditing={() => setQ(text.trim())}
             returnKeyType="search"
             autoFocus={!params.q}
+            autoCorrect={false}
             placeholder="Search products"
             placeholderTextColor="#8A938E"
             style={styles.input}
           />
+          {/* A small spinner in the box, so results can stay on screen while the
+              next ones load instead of the list blinking out. */}
+          {searching ? (
+            <ActivityIndicator size="small" color={colors.muted} />
+          ) : text.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+              onPress={() => {
+                setText("");
+                setQ("");
+              }}
+            >
+              <Feather name="x" size={18} color={colors.muted} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {!q ? null : results.isPending ? (
+      {tooShort ? (
+        <Text style={styles.hint}>Keep typing — two letters or more.</Text>
+      ) : !q ? null : results.isPending ? (
         <ActivityIndicator color={colors.leaf} style={{ marginTop: 40 }} />
       ) : results.isError ? (
         <Banner tone="danger" icon="wifi-off">{errorMessage(results.error)}</Banner>
@@ -132,6 +179,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontFamily: fonts.body, fontSize: 15, color: colors.ink, paddingVertical: 0 },
   count: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.muted, marginBottom: 6 },
+  hint: { fontFamily: fonts.body, fontSize: 13.5, color: colors.muted, marginTop: 6 },
   row: { flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 12 },
   thumb: {
     width: 64,

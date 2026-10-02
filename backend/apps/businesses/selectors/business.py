@@ -15,11 +15,15 @@ from django.shortcuts import get_object_or_404
 def get_businesses() -> QuerySet[Business]:
     """
     Return all businesses.
+
+    `location` is joined because the shop page's address comes from it (see
+    `BusinessDetailSerializer.get_display_address`) — without this, every shop in a
+    list costs an extra query.
     """
 
     return (
         Business.objects
-        .select_related("owner")
+        .select_related("owner", "location")
         .all()
     )
 

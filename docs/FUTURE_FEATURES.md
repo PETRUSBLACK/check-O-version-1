@@ -123,3 +123,53 @@ Worth building once rather than five times, when the time comes:
   listing is what loses users' trust.
 - **Search across a category**, not within one provider — rooms across all
   hotels, a meal across all restaurants.
+
+---
+
+## Core shopping — known gaps
+
+These are not new sections. They are missing pieces of the shopping Check-O
+already does, recorded here so they aren't carried in anyone's head.
+
+### A. Product variants — colour, size, storage
+
+**Raised by Petrus, 30 September 2026**, after the first successful payment: a
+product page offers no choice of colour or size.
+
+**What exists:** a `ProductVariant` model (`apps/products/models/variant.py`)
+with name, value, SKU, price adjustment and its own stock, plus a CRUD endpoint
+at `/api/product-variants/`. **It is connected to nothing.** The product
+serializer doesn't expose it, the cart doesn't know about it, orders don't record
+it, and there are zero rows in it. A table someone created and walked away from —
+which is worse than nothing, because it looks finished from the model list.
+
+**What wiring it up actually means**, in order of difficulty:
+
+1. **Stock moves to the variant.** This is the hard part and the reason the rest
+   matters. Today `stock` and `smartmall_allocation` live on the product. Adaeze
+   has 6 Ankara two-pieces — but if that is 2 small, 3 medium and 1 large, then
+   "6 in stock" is a lie to anyone who needs large. Every stock path has to
+   follow: `available_stock`, the 30-minute `StockReservation`, `confirm_order_stock`,
+   `release_order_stock`, the low-stock alert, the vendor's shelf note.
+2. The product API exposes variants, grouped by name (Size: S/M/L).
+3. The product page makes the customer choose before Add to cart, and disables
+   combinations with no stock.
+4. `CartItem` and `OrderItem` record the chosen variant, and the price adjustment
+   lands in the line total.
+5. The vendor's product screen lets them add variants and set stock per variant.
+6. **The vendor's packing view shows the variant.** The whole point: the order
+   must read "Ankara two-piece, size M", not "Ankara two-piece".
+
+**Why it is not next (decided 30 September 2026).** Five of the six demo shops
+sell things with no variants — oil, drugs, food, chargers, soap. Only fashion
+needs it. This would be the largest piece of work in the project so far, spent on
+something one shop in six uses, before any real Asaba shop has listed anything.
+
+**The cheap version that covers most of it:** a vendor lists "Ankara two-piece —
+size M" as its own product with its own stock. Ugly for a catalogue of fifty
+items, perfectly workable for a shop with twelve. Several real marketplaces began
+exactly this way.
+
+**What would move it to the top:** the first real shop being a boutique. Then
+build it knowing precisely which attributes that shop needs, rather than guessing
+at a general system.

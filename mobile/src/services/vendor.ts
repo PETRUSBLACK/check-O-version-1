@@ -151,6 +151,8 @@ export interface ProductChanges {
   /** null means Check-O may sell everything in the shop. */
   smartmall_allocation?: number | null;
   is_active?: boolean;
+  /** Warn the shop once available stock falls to this number or below. */
+  low_stock_threshold?: number;
 }
 
 /** What the shop should understand about a product at a glance. */

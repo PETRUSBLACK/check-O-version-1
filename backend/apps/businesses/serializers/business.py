@@ -46,6 +46,7 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
 
     avg_rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
+    display_address = serializers.SerializerMethodField()
 
     def get_avg_rating(self, obj) -> float | None:
         scores = [r.score for r in obj.ratings.all()]
@@ -53,6 +54,28 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
 
     def get_rating_count(self, obj) -> int:
         return len(obj.ratings.all())
+
+    def get_display_address(self, obj) -> str:
+        """
+        The one address to show a customer — "where is this shop?"
+
+        There are two in the database and vendors rarely fill both. `Business.address`
+        is typed on the business form and is often left blank. The location row's
+        address is the one that carries the GPS used for distance, so it is the more
+        reliable of the two and it includes the city.
+
+        Prefer the location, fall back to the business field, and return "" rather
+        than None so the app never prints "null" at someone.
+        """
+        location = getattr(obj, "location", None)
+        if location is not None and (location.address or "").strip():
+            parts = [location.address.strip()]
+            # Don't repeat "Asaba" when the street line already says it.
+            for extra in (location.city, location.state):
+                if extra and extra.strip() and extra.strip().lower() not in parts[0].lower():
+                    parts.append(extra.strip())
+            return ", ".join(parts)
+        return (obj.address or "").strip()
 
     class Meta:
         model = Business
@@ -78,6 +101,7 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
             "legal_name",
             "registration_number",
             "address",
+            "display_address",
             "submitted_for_review_at",
             "verified_at",
             "rejection_reason",

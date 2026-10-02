@@ -112,6 +112,17 @@ class Product(UUIDTimeStampedModel):
 
     low_stock_threshold = models.PositiveIntegerField(
         default=5,
+        help_text="Tell the shop when available stock falls to this number or below.",
+    )
+
+    low_stock_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the shop was last told this item is running low. Set on the way "
+            "down and cleared once it is restocked above the threshold, so a shop is "
+            "told once per fall rather than every time the checker runs."
+        ),
     )
 
     is_active = models.BooleanField(

@@ -13,6 +13,8 @@ export interface ProductFormValues {
   stock: string;
   /** "" means Check-O may sell everything in the shop. */
   allocation: string;
+  /** Warn the shop when available stock falls to this. "" means use the default. */
+  lowStockAt: string;
   description: string;
   isActive: boolean;
 }
@@ -26,6 +28,7 @@ export function initialValues(product?: VendorProduct): ProductFormValues {
       product?.smartmall_allocation === null || product?.smartmall_allocation === undefined
         ? ""
         : String(product.smartmall_allocation),
+    lowStockAt: product ? String(product.low_stock_threshold) : "",
     description: product?.description ?? "",
     isActive: product?.is_active ?? true,
   };
@@ -52,6 +55,12 @@ export function toChanges(v: ProductFormValues): { changes: ProductChanges } | {
     else if (allocation > stock) errors.allocation = `You only have ${stock} in the shop`;
   }
 
+  const warnAt = v.lowStockAt.trim();
+  const lowStockThreshold = Number(warnAt.replace(/[^0-9]/g, ""));
+  if (warnAt && (!Number.isFinite(lowStockThreshold) || lowStockThreshold < 0)) {
+    errors.lowStockAt = "That isn't a number";
+  }
+
   if (Object.keys(errors).length) return { errors };
   return {
     changes: {
@@ -61,11 +70,14 @@ export function toChanges(v: ProductFormValues): { changes: ProductChanges } | {
       smartmall_allocation: setsAside ? allocation : null,
       description: v.description.trim(),
       is_active: v.isActive,
+      // Left blank, the backend keeps its own default rather than being sent 0,
+      // which would mean "only warn me once it has completely finished".
+      ...(warnAt ? { low_stock_threshold: lowStockThreshold } : {}),
     },
   };
 }
 
-type Errors = Partial<Record<keyof ProductFormValues | "allocation", string>>;
+type Errors = Partial<Record<keyof ProductFormValues | "allocation" | "lowStockAt", string>>;
 
 export function ProductForm({
   title,
@@ -194,6 +206,22 @@ export function ProductForm({
           ) : null}
         </View>
 
+        {/* The shop sets this, not us. Five is nearly empty for sachet water and
+            plenty for generators, so a single default can only ever be wrong for
+            most products. */}
+        <TextField
+          label="Warn me when only this many are left"
+          value={values.lowStockAt}
+          onChangeText={(lowStockAt) => set({ lowStockAt })}
+          placeholder="5"
+          keyboardType="number-pad"
+          error={errors.lowStockAt}
+        />
+        <Text style={styles.hint}>
+          Check-O will tell you once, so you can restock before it finishes. Leave it
+          blank to keep the usual five.
+        </Text>
+
         {showDescription ? (
           <TextField
             label="Anything a customer should know (optional)"
@@ -276,6 +304,7 @@ function Choice({
 
 const styles = StyleSheet.create({
   rule: { height: 1, backgroundColor: colors.line, marginVertical: 2 },
+  hint: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 18, color: colors.muted, marginTop: -6 },
   header: {
     flexDirection: "row",
     alignItems: "center",
