@@ -29,7 +29,11 @@ services:
     plan: free
     region: frankfurt # closest of Render's regions to Nigeria
     rootDir: backend
-    dockerfilePath: ./backend/Dockerfile
+    # Relative to rootDir, NOT to the repo root — Render's own docs say repo root,
+    # and its build host does not. With rootDir: backend, "./backend/Dockerfile"
+    # is looked for at backend/backend/Dockerfile and the build dies with
+    # "invalid local: resolve : lstat .../backend/backend: no such file".
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health/
     autoDeployTrigger: commit
 

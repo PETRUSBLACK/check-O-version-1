@@ -130,10 +130,18 @@ this up itself.
 The start command already runs `migrate` and `collectstatic` before Daphne, so
 your tables are created on the first deploy with nothing to do by hand.
 
-**If the build cannot find the Dockerfile**, that one field is the usual culprit.
-In the service's Settings, set **Dockerfile Path** to `backend/Dockerfile` (or
-`./Dockerfile`, depending on how Render interprets the root directory that day).
-It is the only field in `render.yaml` whose meaning Render has changed over time.
+**About `dockerfilePath`** — settled by running it, on 2026-10-06. Render's docs
+say the path is relative to the repo root. Its build host disagrees: with
+`rootDir: backend`, the path is resolved **relative to rootDir**. Setting it to
+`./backend/Dockerfile` makes the build look for `backend/backend/Dockerfile` and
+die with:
+
+```
+error: invalid local: resolve : lstat /opt/render/project/src/backend/backend: no such file or directory
+```
+
+`render.yaml` now says `./Dockerfile`, which is correct. If you ever see that
+error again, this is why.
 
 ### If you would rather click than use the Blueprint
 
@@ -252,6 +260,7 @@ spending on this project.
 | Unpaid orders never cancel | Step 5. Check cron-job.org's history for 200s. |
 | First request of the day takes a minute | The service slept. Your cron is not running. Step 5 again. |
 | Build fails on `collectstatic` | A static file referencing something that does not exist. The log names the file. |
+| `invalid local: resolve : lstat .../backend/backend` | `dockerfilePath` — see the note in step 4. It is relative to `rootDir`, not the repo root. |
 
 ---
 
