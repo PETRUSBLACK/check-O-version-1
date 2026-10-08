@@ -120,10 +120,15 @@ else:
 
 # Django 5.1 removed STATICFILES_STORAGE and DEFAULT_FILE_STORAGE outright. This
 # file still set STATICFILES_STORAGE, which Django 5.2 simply ignores — so
-# WhiteNoise has been serving uncompressed, unhashed static files all along.
+# WhiteNoise had been serving uncompressed, unhashed static files all along.
+#
+# Switching manifest storage on turned its strictness on too, and Jazzmin's admin
+# templates reference 'vendor/bootswatch', which is a directory and so is never in
+# the manifest. Every admin page after login became a 500. See core/storage.py —
+# it keeps the hashing and stops a missing entry taking the admin down.
 STORAGES = {
     "default": {"BACKEND": _media_backend},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "staticfiles": {"BACKEND": "core.storage.ForgivingManifestStaticFilesStorage"},
 }
 
 # --- Branding ---
