@@ -56,9 +56,23 @@ class ProductViewSet(viewsets.ModelViewSet):
         if not request.user.is_staff and getattr(request.user, "role", None) != "admin":
             if business.owner_id != request.user.id:
                 raise PermissionDenied("Not your business.")
-            if business.status != BusinessStatus.APPROVED:
+            # This used to demand an APPROVED business, which deadlocked every new
+            # shop on the planet: a shop cannot be submitted for review until it
+            # has a product (missing_before_review), cannot be approved until it
+            # is submitted, and could not add a product until it was approved. A
+            # vendor who signed up had no way out, and nothing in the interface
+            # explained why.
+            #
+            # A draft shop building its catalogue is the intended behaviour — see
+            # the docstring in apps/businesses/services/registration.py, which has
+            # said so since the approval flow was written. Unapproved shops stay
+            # invisible to shoppers through get_queryset, so nothing leaks.
+            #
+            # Suspended is the one status that still refuses: a shop Check-O has
+            # taken down should not be quietly restocking.
+            if business.status == BusinessStatus.SUSPENDED:
                 return Response(
-                    {"detail": "Business must be approved before you can list products."},
+                    {"detail": "This shop is paused. Get in touch with Check-O to sort it out."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
         product = create_product(

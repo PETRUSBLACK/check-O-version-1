@@ -94,6 +94,67 @@ export async function readCurrentPlace(): Promise<ReadPlace | null> {
   }
 }
 
+/**
+ * Turn an address the shop owner typed into a point on the map.
+ *
+ * This is the other half of `readCurrentPlace`, and the more important one. A
+ * trader is far more likely to set her shop up at home in the evening than
+ * standing behind her counter at midday — and if she taps "use my location"
+ * from her sitting room, her shop is quietly pinned to her house and nobody
+ * finds out until a customer knocks on the wrong door.
+ *
+ * So: she answers "where is your shop?" once, in words, and the app works out
+ * the coordinates. Returns null when the address cannot be found, which is
+ * common for an unnamed street — the caller then asks her to use her location
+ * instead rather than pretending it knows.
+ */
+export async function findPlaceFromAddress(address: string): Promise<ReadPlace | null> {
+  const typed = address.trim();
+  if (typed.length < 5) return null;
+
+  try {
+    // Android refuses to geocode without location permission, even though this
+    // never reads the device's own position.
+    const { status } = await withTimeout(Location.requestForegroundPermissionsAsync(), 20000);
+    if (status !== "granted") return null;
+
+    // "12 Nnebisi Road" could be anywhere on earth. Nigeria is where Check-O is.
+    const query = /nigeria/i.test(typed) ? typed : `${typed}, Nigeria`;
+    const [hit] = await withTimeout(Location.geocodeAsync(query), 12000);
+    if (!hit) return null;
+
+    // Read it back as an address so the shop's location row carries a city and
+    // state, and so she can see which place the app actually picked.
+    let street = "";
+    let city = "";
+    let state = "";
+    try {
+      const [place] = await withTimeout(
+        Location.reverseGeocodeAsync({ latitude: hit.latitude, longitude: hit.longitude }),
+        6000,
+      );
+      if (place) {
+        street = place.street || place.name || place.district || "";
+        city = place.city || place.subregion || "";
+        state = place.region || "";
+      }
+    } catch {
+      // The coordinates are the part that matters.
+    }
+
+    return {
+      lat: hit.latitude,
+      lng: hit.longitude,
+      street,
+      city,
+      state,
+      label: [street, city, state].filter(Boolean).join(", ") || typed,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function useUserLocation(): UserLocation {
   const [loc, setLoc] = useState<UserLocation>({
     ...ASABA,

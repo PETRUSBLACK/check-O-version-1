@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Banner, Button, TextField } from "../components/ui";
 import { errorMessage } from "../config/api";
 import { useStatusBar } from "../hooks/useStatusBar";
-import { readCurrentPlace } from "../hooks/useUserLocation";
+import { findPlaceFromAddress, readCurrentPlace } from "../hooks/useUserLocation";
 import { ShopPlace, vendorService } from "../services/vendor";
 import { colors, fonts, radius } from "../theme";
 
@@ -72,6 +72,7 @@ export default function ShopSetup() {
   const [place, setPlace] = useState<ShopPlace | null>(null);
   const [placeLabel, setPlaceLabel] = useState("");
   const [locating, setLocating] = useState(false);
+  const [finding, setFinding] = useState(false);
   const [locateNote, setLocateNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,19 +95,13 @@ export default function ShopSetup() {
   // editable here rather than failing at the server with a validation error.
   const identityLocked = shop?.status === "approved";
 
-  const useMyLocation = async () => {
-    setLocating(true);
-    setLocateNote(null);
-    const found = await readCurrentPlace();
-    setLocating(false);
-
-    if (!found) {
-      setLocateNote(
-        "Couldn't get your location. Turn location on for Check-O, or just type your address below — a customer can still find you by it.",
-      );
-      return;
-    }
-
+  /**
+   * Both buttons answer the same question — where is this shop? — and both end
+   * up in the same place. Two routes exist because a shop owner filling this in
+   * at home cannot use her phone's position, and one filling it in at her
+   * counter should not have to type her street name.
+   */
+  const pinFound = (found: { lat: number; lng: number; city: string; state: string; label: string }) => {
     setPlace({
       latitude: found.lat,
       longitude: found.lng,
@@ -115,8 +110,42 @@ export default function ShopSetup() {
       full_address: found.label || address.trim(),
     });
     setPlaceLabel(found.label || `${found.lat.toFixed(4)}, ${found.lng.toFixed(4)}`);
-    // Only fill the address box if it's empty — never overwrite what they typed.
+    // Only fill the address box if it's empty — never overwrite what she typed.
     if (!address.trim() && found.label) setAddress(found.label);
+  };
+
+  const useMyLocation = async () => {
+    setLocating(true);
+    setLocateNote(null);
+    const found = await readCurrentPlace();
+    setLocating(false);
+
+    if (!found) {
+      setLocateNote(
+        "Couldn't read your position. Turn location on for Check-O, or type your address above and tap \"Find my address\".",
+      );
+      return;
+    }
+    pinFound(found);
+  };
+
+  const findFromAddress = async () => {
+    if (address.trim().length < 5) {
+      setLocateNote("Type your shop's address first, then tap this.");
+      return;
+    }
+    setFinding(true);
+    setLocateNote(null);
+    const found = await findPlaceFromAddress(address);
+    setFinding(false);
+
+    if (!found) {
+      setLocateNote(
+        "Couldn't find that address on the map. Try adding the town — for example \"12 Nnebisi Road, Asaba\" — or tap \"Use my location\" while you are at the shop.",
+      );
+      return;
+    }
+    pinFound(found);
   };
 
   const save = useMutation({
@@ -168,12 +197,25 @@ export default function ShopSetup() {
     onError: (err) => setError(errorMessage(err)),
   });
 
+  // A shop that is already pinned does not have to be pinned again every time
+  // its owner edits her phone number.
+  const alreadyPinned = shop?.latitude != null && shop?.longitude != null;
+  const hasPin = place !== null || alreadyPinned;
+
   const submit = () => {
     setError(null);
     if (!name.trim()) return setError("What is your shop called?");
     if (!category) return setError("Pick what you sell, so customers can find you.");
     if (!phone.trim()) return setError("Customers need a number they can call you on.");
-    if (!address.trim()) return setError("Where is your shop? Type the address or use your location.");
+    if (!address.trim()) return setError("Where is your shop? Type the address.");
+    if (!hasPin) {
+      // Checked here rather than left to the checklist on My shop. Finding out
+      // two screens later that the app still does not know where your shop is,
+      // after you typed the address, reads as the app not listening.
+      return setError(
+        "Check-O also needs your shop on the map — that is how customers nearby find you. Tap \"Find my address\" or \"Use my location\".",
+      );
+    }
     if (delivers && !fee.trim()) {
       return setError("How much do you charge to deliver? Put 0 if it's free.");
     }
@@ -277,31 +319,48 @@ export default function ShopSetup() {
           multiline
         />
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={useMyLocation}
-          disabled={locating}
-          style={[styles.locate, locating && { opacity: 0.6 }]}
-        >
-          {locating ? (
-            <ActivityIndicator size="small" color={colors.leaf} />
-          ) : (
-            <Feather name="map-pin" size={17} color={colors.leaf} />
-          )}
-          <Text style={styles.locateText}>
-            {locating ? "Finding you…" : placeLabel ? "Pinned — tap to redo" : "I'm standing in my shop — use my location"}
-          </Text>
-        </Pressable>
+        <View style={styles.locateRow}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={findFromAddress}
+            disabled={finding || locating}
+            style={[styles.locate, (finding || locating) && { opacity: 0.6 }]}
+          >
+            {finding ? (
+              <ActivityIndicator size="small" color={colors.leaf} />
+            ) : (
+              <Feather name="search" size={16} color={colors.leaf} />
+            )}
+            <Text style={styles.locateText}>{finding ? "Looking…" : "Find my address"}</Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={useMyLocation}
+            disabled={locating || finding}
+            style={[styles.locate, (locating || finding) && { opacity: 0.6 }]}
+          >
+            {locating ? (
+              <ActivityIndicator size="small" color={colors.leaf} />
+            ) : (
+              <Feather name="map-pin" size={16} color={colors.leaf} />
+            )}
+            <Text style={styles.locateText}>{locating ? "Finding you…" : "Use my location"}</Text>
+          </Pressable>
+        </View>
 
         {placeLabel ? (
-          <Text style={styles.hint}>
-            <Feather name="check" size={12} color={colors.leaf} /> {placeLabel}. This is how customers
-            nearby find you first.
-          </Text>
+          <View style={styles.pinned}>
+            <Feather name="check-circle" size={15} color={colors.leaf} />
+            <Text style={styles.pinnedText}>
+              On the map at {placeLabel}. Tap either button again if that is not right.
+            </Text>
+          </View>
         ) : (
           <Text style={styles.hint}>
-            Do this standing in your shop. It's what puts you at the top of the list for customers close
-            by, instead of somewhere in the middle of Asaba.
+            Check-O sorts shops by how near they are, so it needs your shop on the map as well as in
+            words. "Find my address" works the spot out from what you typed. "Use my location" reads
+            your phone's position, which is only right if you are at the shop now.
           </Text>
         )}
 
@@ -412,11 +471,14 @@ const styles = StyleSheet.create({
   chipText: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.muted },
   chipTextOn: { fontFamily: fonts.bodyBold, color: colors.leaf },
 
+  locateRow: { flexDirection: "row", gap: 9 },
   locate: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
-    paddingHorizontal: 14,
+    justifyContent: "center",
+    gap: 7,
+    paddingHorizontal: 10,
     paddingVertical: 14,
     borderRadius: radius.md,
     borderWidth: 1.5,
@@ -424,7 +486,16 @@ const styles = StyleSheet.create({
     borderColor: colors.leaf,
     backgroundColor: colors.mint,
   },
-  locateText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 13.5, color: colors.leaf },
+  locateText: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.leaf, textAlign: "center" },
+  pinned: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.mint,
+    borderRadius: radius.sm,
+    padding: 11,
+  },
+  pinnedText: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 12.5, lineHeight: 18, color: colors.leaf },
 
   segment: { flexDirection: "row", gap: 8 },
   segItem: {

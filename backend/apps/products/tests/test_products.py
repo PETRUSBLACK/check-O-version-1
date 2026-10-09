@@ -71,7 +71,12 @@ class ProductCreateTest(TestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Product.objects.filter(business=business).count(), 1)
 
-    def test_vendor_cannot_create_product_for_unapproved_business(self):
+    def test_vendor_can_create_product_for_a_business_awaiting_review(self):
+        """
+        This test used to assert the opposite, and that rule deadlocked every new
+        shop: the review checklist demands a product, and this refused to let an
+        unapproved shop have one. See apps/products/tests/test_new_shop_can_list.py.
+        """
         vendor = make_vendor()
         business = make_business(vendor, status=BusinessStatus.PENDING)
         self.client.force_authenticate(vendor)
@@ -81,7 +86,20 @@ class ProductCreateTest(TestCase):
             "price": "25.00",
             "stock": 10,
         }, format="json")
-        self.assertIn(res.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_400_BAD_REQUEST])
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+
+    def test_vendor_cannot_create_product_for_a_suspended_business(self):
+        """A shop Check-O has taken down should not be quietly restocking."""
+        vendor = make_vendor()
+        business = make_business(vendor, status=BusinessStatus.SUSPENDED)
+        self.client.force_authenticate(vendor)
+        res = self.client.post("/api/products/", {
+            "business": str(business.pk),
+            "name": "New Product",
+            "price": "25.00",
+            "stock": 10,
+        }, format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_vendor_cannot_create_product_for_another_vendors_business(self):
         vendor1 = make_vendor("v1@example.com")
