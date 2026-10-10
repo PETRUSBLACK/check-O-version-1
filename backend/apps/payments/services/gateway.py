@@ -205,6 +205,11 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
         raise ValueError(f"Gateway verification failed: {exc}") from exc
 
     if not result.success:
+        if result.declined is False:
+            # Not finished, not failed. A payment marked failed can never be
+            # paid again, so leave it pending and let the customer check back.
+            logger.info("payment_not_yet ref=%s", external_ref)
+            raise ValueError(f"Payment ref={external_ref} has not completed yet.")
         mark_payment_failed(provider=provider, external_ref=external_ref)
         raise ValueError(f"Gateway reported payment as unsuccessful for ref={external_ref}")
 

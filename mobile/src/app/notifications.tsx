@@ -22,6 +22,7 @@ import {
   notificationsService,
   whenOf,
 } from "../services/notifications";
+import { useAuth } from "../store/auth";
 import { colors, fonts } from "../theme";
 
 /**
@@ -36,6 +37,17 @@ export default function Notifications() {
   useStatusBar("dark");
   const insets = useSafeAreaInsets();
   const cache = useQueryClient();
+  const selling = useAuth((s) => s.user?.role) === "vendor";
+
+  /**
+   * The inbox can be the first screen the app shows — reload Expo while it is
+   * open and it comes back with nothing behind it. An unguarded `back()` then
+   * throws "The action 'GO_BACK' was not handled by any navigator", which is
+   * what the arrow did until 2026-10-10. Every other screen in Check-O already
+   * checks; this one did not.
+   */
+  const leave = () =>
+    router.canGoBack() ? router.back() : router.replace(selling ? "/(vendor)" : "/");
 
   const inbox = useQuery({
     queryKey: ["notifications"],
@@ -122,7 +134,7 @@ export default function Notifications() {
         <View style={{ gap: 12, marginBottom: 2 }}>
           <View style={styles.bar}>
             <Pressable
-              onPress={() => router.back()}
+              onPress={leave}
               accessibilityRole="button"
               accessibilityLabel="Go back"
               hitSlop={10}

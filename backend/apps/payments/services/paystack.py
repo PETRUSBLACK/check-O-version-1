@@ -92,7 +92,14 @@ class PaystackGateway(BaseGateway):
             raise ValueError(f"Paystack verification failed: {exc}") from exc
 
         tx_data = data.get("data", {})
-        success = tx_data.get("status") == "success"
+        paystack_status = tx_data.get("status")
+        success = paystack_status == "success"
+        # Paystack statuses: success, failed, reversed, abandoned, ongoing,
+        # pending, processing, queued. Only the first three that are not
+        # "success" are final. "abandoned" is what it says while a customer is
+        # still on the payment page or has just closed it, and that is not a
+        # reason to condemn the payment.
+        declined = paystack_status in ("failed", "reversed")
         # Paystack returns amount in kobo — convert back to Naira
         amount = Decimal(tx_data.get("amount", 0)) / 100
 
@@ -101,6 +108,7 @@ class PaystackGateway(BaseGateway):
             external_ref=external_ref,
             amount=amount,
             provider_payload=data,
+            declined=declined,
         )
 
     def verify_webhook_signature(self, *, payload: bytes, signature: str) -> bool:

@@ -308,3 +308,46 @@ minutes.
 
 Every feature in Check-O is a guess about what a trader in Asaba needs. Until a
 real shop has traded for a week, they are all still guesses — well-built ones.
+
+---
+
+## 2026-10-10, midday — paid, and Check-O never found out
+
+### 10. A payment Paystack had taken stayed "waiting for payment" — **fixed 2026-10-10, not yet seen working**
+
+Petrus bought his own product on a shopper account and paid on Paystack's test
+page. Paystack's dashboard said **Success, NGN 1,000, paid 9:35 UTC**. His order
+said *waiting for payment*, and the admin showed four payments for the session,
+none successful: two `Pending`, two `Failed`.
+
+Three separate faults, each enough to cause it:
+
+1. **Nothing asked.** The app asks Paystack "did that work?" only when the
+   customer is sent back from the payment page via `checko://…`. Expo Go does not
+   understand that link, so the page never handed him back and the check never
+   ran. Paystack's webhook, the other route, is not configured in its dashboard.
+   A customer who has paid depended entirely on one of those two things.
+2. **"Not yet" was treated as "no".** The verify call asked Paystack one yes/no
+   question. Paystack's real answer includes `abandoned`, `ongoing`, `pending`,
+   which mean *still going*, and all of them were written off as `failed`. A
+   failed payment can never be paid again. That is what the two `Failed` rows are.
+3. **No safety net.** Nothing swept up payments that stayed pending.
+
+**Fixed:** `VerifyResult.declined` now separates "definitely failed" from "not
+finished"; only Paystack's `failed` and `reversed` are final. And
+`tasks.settle_pending_payments` runs every five minutes, **before** the task that
+cancels unpaid orders, asking the gateway about anything still waiting. It leaves
+alone anything under a minute old (the app gets first go) and gives up on
+anything over a day old. 15 new tests; 422 passing.
+
+**The ordering is the point.** Without it, an order whose 30 minutes ran out
+while its money sat unconfirmed would be cancelled and its stock handed back to
+other shoppers. `test_paid_money_beats_the_clock` pins it.
+
+**Still open:** the `checko://` return link never working in Expo Go. It should
+work in a real built app, so it is left alone until there is an APK to test. The
+five-minute sweep means it no longer matters for correctness, only for how fast
+the screen updates.
+
+**Same lesson as #6 and #9, third time in a day.** I could read the code
+without finding this. A screenshot of Paystack's own dashboard did, in one look.

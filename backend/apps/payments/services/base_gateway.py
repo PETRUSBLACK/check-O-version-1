@@ -23,6 +23,13 @@ class VerifyResult:
     external_ref: str        # Gateway's reference
     amount: Decimal          # Amount confirmed by gateway
     provider_payload: dict   # Raw payload from gateway
+    # "Not successful" is two different answers, and treating them as one cost
+    # Petrus four stuck payments on 2026-10-10:
+    #   True  — the gateway says it definitely failed (declined, reversed).
+    #   False — it has not finished yet (abandoned, ongoing, pending). The
+    #           customer may still pay, so this must not be written off.
+    #   None  — this gateway cannot tell the two apart; behave as before.
+    declined: bool | None = None
 
 
 class BaseGateway(ABC):

@@ -17,6 +17,7 @@ That runs the "frequent" tasks every time, the hourly tasks once an hour and
 the daily tasks once a day. See core/management/commands/run_tasks.py.
 
 Task schedule:
+    settle_pending_payments    → every 5 minutes (BEFORE expire_unpaid_orders)
     expire_unpaid_orders       → every 5 minutes (30-minute payment window)
     remind_vendors_waiting     → every 5 minutes (paid orders untouched for 2 hours)
     expire_pickup_orders       → every 5 minutes
@@ -166,6 +167,66 @@ def expire_unconfirmed_subscriptions():
     return count
 
 
+# A payment gets this long for the app to ask about it itself, so the sweep does
+# not race the customer walking back from the payment page.
+SETTLE_AFTER_SECONDS = 60
+# Past this a payment that never completed is not worth asking Paystack about.
+SETTLE_GIVE_UP_HOURS = 24
+SETTLE_MAX_PER_RUN = 50
+
+
+def settle_pending_payments():
+    """
+    Ask the gateway about every payment still waiting, and settle the ones that
+    have in fact been paid.
+
+    Written 2026-10-10 after Petrus paid with Paystack's test page and was left
+    looking at "waiting for payment". Paystack's dashboard showed Success; Check-O
+    showed Pending. Nothing had ever asked. The app only asks when the customer is
+    sent back from the payment page, and a phone that closes the page by hand, or
+    runs in Expo Go, is never sent back; Paystack's own webhook only helps once
+    someone has configured it. A customer who has paid should not depend on
+    either.
+
+    Safe to repeat: a payment already settled is skipped, and a payment that has
+    not finished simply stays pending until the next run. Must run before
+    `expire_unpaid_orders`, which would otherwise cancel an order whose money is
+    already in.
+
+    Run every 5 minutes.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.payments.models import Payment, PaymentStatus
+    from apps.payments.services.gateway import confirm_payment_via_webhook
+
+    now = timezone.now()
+    waiting = Payment.objects.filter(
+        status=PaymentStatus.PENDING,
+        created_at__lte=now - timedelta(seconds=SETTLE_AFTER_SECONDS),
+        created_at__gte=now - timedelta(hours=SETTLE_GIVE_UP_HOURS),
+    ).exclude(external_ref="")[:SETTLE_MAX_PER_RUN]
+
+    settled = 0
+    for payment in waiting:
+        try:
+            confirm_payment_via_webhook(
+                provider=payment.provider, external_ref=payment.external_ref
+            )
+            settled += 1
+        except ValueError:
+            # Not finished, or Paystack could not be reached. Both mean "ask again
+            # next time", which is what leaving it pending does.
+            continue
+        except Exception:  # noqa: BLE001 — one bad payment must not stop the rest
+            logger.exception("task_settle_payment_failed payment=%s", payment.pk)
+
+    logger.info("task_settle_pending_payments settled=%d", settled)
+    return settled
+
+
 def expire_unpaid_orders():
     """
     Cancel orders not paid within the 30-minute payment window and return
@@ -247,6 +308,9 @@ def remind_vendors_waiting():
 
 def run_all_frequent_tasks():
     """Run all tasks that should execute every 5 minutes."""
+    # First, always: money that has arrived must be counted before the clock
+    # is allowed to cancel the order it paid for.
+    settle_pending_payments()
     expire_unpaid_orders()
     remind_vendors_waiting()
     expire_pickup_orders()

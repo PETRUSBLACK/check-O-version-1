@@ -54,10 +54,12 @@ class VerifyPaymentTest(TestCase):
         self.url = f"/api/payments/{self.payment.id}/verify/"
         self.client.force_authenticate(self.customer)
 
-    def gateway_says(self, *, success: bool, amount="20000.00"):
+    def gateway_says(self, *, success: bool, amount="20000.00", declined=None):
         return patch(
             "apps.payments.services.gateway.get_gateway",
-            return_value=_FakeGateway(success=success, amount=Decimal(amount)),
+            return_value=_FakeGateway(
+                success=success, amount=Decimal(amount), declined=declined
+            ),
         )
 
     # ─── The gateway said yes ─────────────────────────────────────────────────
@@ -119,6 +121,45 @@ class VerifyPaymentTest(TestCase):
             res = self.client.post(self.url)
         self.assertEqual(res.status_code, 200, res.data)
 
+    # ─── The gateway has not finished ─────────────────────────────────────────
+    #
+    # Found 2026-10-10: Petrus paid with Paystack's test page and came back to
+    # an order still "waiting for payment" — four payments in the admin, none
+    # successful, two of them marked failed. The code asked Paystack one yes/no
+    # question, so "abandoned" and "ongoing" (which is what Paystack says while a
+    # customer is still on its page) were written off as failures. A failed
+    # payment can never be paid again.
+
+    def test_a_payment_that_has_not_finished_is_not_written_off(self):
+        with self.gateway_says(success=False, declined=False):
+            res = self.client.post(self.url)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("haven't seen this payment yet", res.data["detail"])
+
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.PENDING)
+
+    def test_a_payment_that_was_not_finished_can_still_be_completed(self):
+        """The whole point: coming back too early must not cost the sale."""
+        with self.gateway_says(success=False, declined=False):
+            self.client.post(self.url)
+        with self.gateway_says(success=True):
+            res = self.client.post(self.url)
+        self.assertEqual(res.status_code, 200, res.data)
+
+        order = self.group.orders.get()
+        order.refresh_from_db()
+        self.assertEqual(order.status, OrderStatus.PAID)
+
+    def test_a_payment_the_gateway_declined_is_final(self):
+        with self.gateway_says(success=False, declined=True):
+            res = self.client.post(self.url)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("didn't go through", res.data["detail"])
+
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.status, PaymentStatus.FAILED)
+
     # ─── Whose payment is it ──────────────────────────────────────────────────
 
     def test_someone_elses_payment_is_refused(self):
@@ -146,9 +187,10 @@ class VerifyPaymentTest(TestCase):
 class _FakeGateway:
     """Stands in for Paystack so the tests never touch the network."""
 
-    def __init__(self, *, success: bool, amount: Decimal):
+    def __init__(self, *, success: bool, amount: Decimal, declined=None):
         self.success = success
         self.amount = amount
+        self.declined = declined
 
     def verify(self, *, external_ref: str) -> VerifyResult:
         return VerifyResult(
@@ -156,4 +198,38 @@ class _FakeGateway:
             external_ref=external_ref,
             amount=self.amount,
             provider_payload={},
+            declined=self.declined,
         )
+
+
+class PaystackStatusMappingTest(TestCase):
+    """What Paystack's own words mean, checked at the adapter."""
+
+    def verdict(self, paystack_status):
+        from unittest.mock import MagicMock
+
+        from apps.payments.services.paystack import PaystackGateway
+
+        with patch("apps.payments.services.paystack.requests.get") as get:
+            get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"data": {"status": paystack_status, "amount": 100000}},
+                raise_for_status=lambda: None,
+            )
+            return PaystackGateway().verify(external_ref="SM-X")
+
+    def test_success_is_success(self):
+        result = self.verdict("success")
+        self.assertTrue(result.success)
+
+    def test_failed_and_reversed_are_final(self):
+        for word in ("failed", "reversed"):
+            result = self.verdict(word)
+            self.assertFalse(result.success, word)
+            self.assertTrue(result.declined, word)
+
+    def test_abandoned_ongoing_and_pending_are_not_final(self):
+        for word in ("abandoned", "ongoing", "pending", "processing", "queued"):
+            result = self.verdict(word)
+            self.assertFalse(result.success, word)
+            self.assertFalse(result.declined, word)
