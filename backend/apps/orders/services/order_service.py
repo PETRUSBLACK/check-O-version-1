@@ -131,6 +131,16 @@ def transition_order_status(*, order_id: UUID, to_status: str) -> Order:
     except Exception:
         pass
 
+    # And tell the shop, which until 2026-10-10 nothing here ever did. The
+    # customer was told at every step and the person who has to pack the bag
+    # was told nothing at all.
+    if to_status == OrderStatus.PAID.value:
+        try:
+            from apps.notifications.services.notification_service import notify_vendor_new_order
+            notify_vendor_new_order(order=order)
+        except Exception:
+            logger.exception("notify_vendor_new_order_failed order=%s", order.pk)
+
     return order
 
 
@@ -356,5 +366,13 @@ def _apply_cancellation(*, order: Order, by: str, user, reason: str, note: str =
         notify_order_status_changed(order=order, previous_status=previous_status)
     except Exception:
         pass
+
+    # The shop set stock aside for this order and has now had it handed back.
+    # Nobody tells her that either, unless we do it here.
+    try:
+        from apps.notifications.services.notification_service import notify_vendor_order_cancelled
+        notify_vendor_order_cancelled(order=order, by=by)
+    except Exception:
+        logger.exception("notify_vendor_cancelled_failed order=%s", order.pk)
 
     return order

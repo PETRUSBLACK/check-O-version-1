@@ -8,7 +8,68 @@ is the record of the difference.
 
 ---
 
-## 2026-10-10 — the first shop ever approved on Check-O
+## 2026-10-10, later — what the inbox revealed
+
+### 8. Nobody ever tells the shop — **fixed 2026-10-10**
+
+Found while debugging #7, which is the point of building an inbox: once
+messages can be seen, the missing ones become visible.
+
+Every notification helper in Check-O was addressed to `order.customer`. Order
+placed, payment confirmed, status changed, shipment moved, pickup due, pickup
+expired, refund due — seven of them, all to the shopper. **Not one reached the
+person who has to pack the bag.**
+
+A trader whose phone stays silent when money arrives has to keep opening
+Check-O to check whether anything has happened, which is precisely the
+behaviour an order notification exists to make unnecessary. Check-O would have
+been quieter than a missed call.
+
+Petrus's reply when I raised it was the whole argument in six words: *"why
+should a shop owner not receive notifications?"* There is no reason. It was
+never a decision, it was an omission — the shop side of Check-O was built
+outwards from the shopper side, and until that morning nothing in the app could
+display a notification at all, so there was nothing to notice missing.
+
+**Fixed:** the shop is now told when an order is **paid**, and when somebody
+else cancels one.
+
+Two judgements worth keeping:
+
+- **Paid, not placed.** An unpaid order is a thirty-minute hold that may simply
+  lapse. Sending a trader to pack something that might evaporate teaches her to
+  ignore Check-O, which costs more than the message is worth. Payment is the
+  first moment the work is real.
+- **Not her own cancellations.** A vendor who cancels an order does not need a
+  message announcing what she just did.
+
+Nine tests, in the shape of the gap: for every message, who gets it — including
+that the shopper did not lose anything, that one payment does not announce
+itself twice, and that an order with no shop attached still gets paid for.
+
+### 9. Three fixes for a bug that was in the data — **the morning's real lesson**
+
+Tapping a notification did nothing. I shipped three fixes without once asking
+the device what was happening: a plain push, then a dismiss-then-navigate, then
+a replace. All three were wrong, and Petrus tested every one of them on his own
+phone, reloading Expo each time.
+
+The fourth attempt was not a fix. It was four lines that made the screen say
+what the tap had just done. The answer came back in one tap: **no destination.**
+
+His two notifications were written at 4:38 and 4:42 that morning. The columns
+that say what a notification is about were added by a migration at 5:03. Those
+rows got the defaults — an empty event type, an empty payload — so the app
+correctly refused to invent somewhere to go. The navigation code had been right
+the whole time, on data a quarter of an hour too old.
+
+**The lesson is the same one as #6, which was two days ago.** There, 382 tests
+passed because every one of them went through the ORM and none through the
+view. Here, three fixes failed because I reasoned about the code from a sandbox
+while the only evidence was on a phone in Asaba. Both are the same mistake:
+*believing a model of the system instead of asking the system.*
+
+Instrument first, then fix. It costs one round trip and saves four.
 
 Petrus took Shop O all the way: signed up, set the shop up, added a product with
 a photo, submitted it, approved it in the admin. **Shop O is the first shop ever

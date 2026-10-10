@@ -24,7 +24,9 @@ export type NotificationEvent =
   | "business.submitted"
   | "business.approved"
   | "business.rejected"
-  | "inventory.low_stock";
+  | "inventory.low_stock"
+  | "vendor.new_order"
+  | "vendor.order_cancelled";
 
 /** Mirrors apps/notifications NotificationSerializer. */
 export interface Notification {
@@ -80,6 +82,22 @@ function id(payload: Record<string, unknown>, key: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+export interface Destination {
+  href: string;
+  /**
+   * True when the destination is one of the tabs the inbox was opened from.
+   *
+   * This distinction is not fussiness, it is a bug that reached a real person.
+   * The inbox is pushed *on top of* the tabs, so navigating to one of them
+   * switches the tab underneath while the inbox stays where it is. The app
+   * obeys perfectly and the vendor sees absolutely nothing happen. Petrus hit
+   * this on 2026-10-10, tapping "Shop O is open on Check-O" over and over.
+   *
+   * A destination marked this way has to have the inbox closed first.
+   */
+  inTabsBelow: boolean;
+}
+
 /**
  * Where tapping a notification should take you, or null when there is nowhere
  * useful to go.
@@ -89,9 +107,12 @@ function id(payload: Record<string, unknown>, key: string): string | null {
  * the message is worth reading and there is no screen behind it. A row that
  * doesn't navigate is better than one that navigates somewhere wrong.
  */
-export function destinationOf(n: Notification): string | null {
+export function destinationOf(n: Notification): Destination | null {
   const orderId = id(n.payload, "order_id");
   const businessId = id(n.payload, "business_id");
+
+  const screen = (href: string): Destination => ({ href, inTabsBelow: false });
+  const tab = (href: string): Destination => ({ href, inTabsBelow: true });
 
   switch (n.event_type) {
     case "order.placed":
@@ -101,15 +122,21 @@ export function destinationOf(n: Notification): string | null {
     case "order.refund_due":
     case "payment.confirmed":
     case "shipment.updated":
-      return orderId ? `/order/${orderId}` : "/orders";
+      return orderId ? screen(`/order/${orderId}`) : tab("/orders");
+
+    // The shop's own orders, which are a different screen from the shopper's
+    // view of the same order — one has a "mark as ready" button on it.
+    case "vendor.new_order":
+    case "vendor.order_cancelled":
+      return orderId ? screen(`/vendor-order/${orderId}`) : tab("/(vendor)");
 
     case "inventory.low_stock":
       // The owner's own shelf, not a shopper's view of the shop.
-      return "/(vendor)/products";
+      return tab("/(vendor)/products");
 
     case "business.approved":
     case "business.rejected":
-      return "/(vendor)/shop";
+      return tab("/(vendor)/shop");
 
     case "business.submitted":
       // Reviewers only. Nothing in the app approves shops yet.
@@ -118,8 +145,8 @@ export function destinationOf(n: Notification): string | null {
     default:
       // An event this build has not heard of — if it names an order or a shop,
       // that is still a good guess; otherwise just let it be read.
-      if (orderId) return `/order/${orderId}`;
-      if (businessId) return `/shop/${businessId}`;
+      if (orderId) return screen(`/order/${orderId}`);
+      if (businessId) return screen(`/shop/${businessId}`);
       return null;
   }
 }
@@ -128,7 +155,7 @@ export function destinationOf(n: Notification): string | null {
 export function iconOf(n: Notification): "package" | "credit-card" | "truck" | "home" | "alert-triangle" | "bell" {
   if (n.event_type.startsWith("payment.")) return "credit-card";
   if (n.event_type === "shipment.updated") return "truck";
-  if (n.event_type.startsWith("order.")) return "package";
+  if (n.event_type.startsWith("order.") || n.event_type.startsWith("vendor.")) return "package";
   if (n.event_type === "inventory.low_stock") return "alert-triangle";
   if (n.event_type.startsWith("business.")) return "home";
   return "bell";

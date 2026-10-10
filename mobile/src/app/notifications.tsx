@@ -72,8 +72,24 @@ export default function Notifications() {
 
   function open(n: Notification) {
     if (!n.is_read) markRead.mutate(n.id);
+
     const to = destinationOf(n);
-    if (to) router.push(to as never);
+    if (!to) return;
+
+    // A screen of its own goes on top, so Back returns here to the inbox.
+    if (!to.inTabsBelow) {
+      router.push(to.href as never);
+      return;
+    }
+
+    // The destination is a tab sitting underneath the inbox. Pushing it only
+    // switches the screen behind this one, so from the person's side nothing
+    // happens at all. Closing the inbox and then navigating — the obvious
+    // repair — is the one thing that cannot work: expo-router swallows a
+    // navigate that follows a dismiss when the destination is in a group with
+    // its own layout, which (vendor) and (tabs) both are (expo/expo#39517).
+    // `replace` is a single call, so there is no second navigation to lose.
+    router.replace(to.href as never);
   }
 
   if (inbox.isPending) {
@@ -116,6 +132,14 @@ export default function Notifications() {
             </Pressable>
             <Text style={styles.title}>Notifications</Text>
           </View>
+
+
+          {rows.length > 0 ? (
+            <Text style={styles.count}>
+              {rows.length} {rows.length === 1 ? "message" : "messages"} ·{" "}
+              {unread === 0 ? "all read" : `${unread} unread`}
+            </Text>
+          ) : null}
 
           {unread > 0 ? (
             <Pressable
@@ -204,6 +228,7 @@ const styles = StyleSheet.create({
   bar: { flexDirection: "row", alignItems: "center", gap: 6 },
   back: { width: 34, height: 34, alignItems: "center", justifyContent: "center", marginLeft: -6 },
   title: { fontFamily: fonts.display, fontSize: 28, color: colors.ink, letterSpacing: -0.6 },
+  count: { fontFamily: fonts.bodyMedium, fontSize: 13, color: colors.muted, marginTop: -6 },
   markAll: { flexDirection: "row", alignItems: "center", gap: 7, alignSelf: "flex-start" },
   markAllText: { fontFamily: fonts.bodySemibold, fontSize: 13.5, color: colors.leaf },
   card: {
