@@ -138,6 +138,23 @@ class TheShopGetsToldTest(TestCase):
         self.assertEqual(len(told), 1)
         self.assertIn("back on your shelf", told[0].body)
 
+    def test_the_shop_is_not_told_about_an_order_it_never_heard_of(self):
+        """
+        An unpaid order that lapses was never announced to the shop, so a message
+        saying it was cancelled is about something she never saw.
+        """
+        from apps.orders.services.order_service import _apply_cancellation
+
+        order = self.an_order(status=OrderStatus.PENDING_PAYMENT.value)
+        Notification.objects.all().delete()
+        _apply_cancellation(
+            order=order,
+            by=CancelledBy.SYSTEM,
+            user=None,
+            reason=CancellationReason.PAYMENT_TIMEOUT,
+        )
+        self.assertEqual(self.messages_for(self.owner, "vendor.order_cancelled"), [])
+
     def test_the_shop_is_not_told_about_its_own_cancellation(self):
         """A vendor does not need a message announcing what she just did."""
         from apps.orders.services.order_service import _apply_cancellation
