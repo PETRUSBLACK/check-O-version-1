@@ -6,6 +6,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Tex
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusPill, when } from "../(tabs)/orders";
+import { NotificationBell } from "../../components/NotificationBell";
 import { Banner, Button, EmptyState } from "../../components/ui";
 import { errorMessage } from "../../config/api";
 import { useStatusBar } from "../../hooks/useStatusBar";
@@ -65,16 +66,21 @@ export default function VendorOrders() {
       ListHeaderComponent={
         <View>
           <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-            <Text style={styles.hello}>
-              {todo.length === 0
-                ? "Nothing waiting"
-                : `${todo.length} order${todo.length === 1 ? "" : "s"} to sort out`}
-            </Text>
-            {todo.length > 0 ? (
-              <Text style={styles.worth}>{naira(money)} waiting to be fulfilled</Text>
-            ) : (
-              <Text style={styles.worth}>You're all caught up.</Text>
-            )}
+            <View style={styles.headerRow}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={styles.hello}>
+                  {todo.length === 0
+                    ? "Nothing waiting"
+                    : `${todo.length} order${todo.length === 1 ? "" : "s"} to sort out`}
+                </Text>
+                {todo.length > 0 ? (
+                  <Text style={styles.worth}>{naira(money)} waiting to be fulfilled</Text>
+                ) : (
+                  <Text style={styles.worth}>You're all caught up.</Text>
+                )}
+              </View>
+              <NotificationBell onDark />
+            </View>
           </View>
 
           <View style={styles.tabs}>
@@ -223,6 +229,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   hello: { fontFamily: fonts.display, fontSize: 26, color: colors.white, letterSpacing: -0.6 },
   worth: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.leafSoft },
   tabs: { flexDirection: "row", gap: 10, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4 },

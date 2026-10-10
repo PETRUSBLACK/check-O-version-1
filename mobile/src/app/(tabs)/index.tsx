@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HOME_CATEGORIES } from "../../components/categories";
+import { NotificationBell } from "../../components/NotificationBell";
 import { ShopCard } from "../../components/ShopCard";
 import { Banner, Button, EmptyState } from "../../components/ui";
 import { errorMessage } from "../../config/api";
@@ -74,6 +75,7 @@ export default function Home() {
               </Text>
             </View>
           </View>
+          <NotificationBell onDark />
         </View>
         <Text style={styles.hello}>
           {greeting()}

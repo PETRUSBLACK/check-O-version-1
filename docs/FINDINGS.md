@@ -8,6 +8,108 @@ is the record of the difference.
 
 ---
 
+## 2026-10-10 — the first shop ever approved on Check-O
+
+Petrus took Shop O all the way: signed up, set the shop up, added a product with
+a photo, submitted it, approved it in the admin. **Shop O is the first shop ever
+to go live on Check-O.** Two things broke on the way, and both were mine.
+
+### 6. A new shop could never add a product — **fixed 2026-10-10**
+
+He reported it in four words: *"the add product is not working"*. The cause was a
+deadlock with no way out:
+
+- `missing_before_review()` refuses to let a shop be submitted until it has at
+  least one product
+- a shop cannot be approved until it has been submitted
+- and `ProductViewSet.create()` refused any shop that was not already **approved**
+
+So every vendor who ever signed up was stuck permanently. The app told her she
+needed a product; the server told her she needed approval. There was no order in
+which those three could be satisfied.
+
+Mine, added on 2 October, shipped to production on the 6th, found by a human on
+the 10th. The service layer's own docstring says the opposite in plain English —
+*"The waiting is never dead time. A draft shop can add products, photos and set
+prices — all of it"* — and the view contradicted it for eight days.
+
+**Fixed:** product creation now refuses only `SUSPENDED`. Draft, pending and
+rejected shops can all stock their shelves.
+
+**Why no test caught it, which is the part worth keeping:** every existing
+product test built its products with `Product.objects.create(...)`, straight
+through the ORM. The ORM never runs a view's permission check. 382 passing tests
+and not one of them had ever asked the server to create a product the way the app
+does. `backend/apps/products/tests/test_new_shop_can_list.py` now does, nine
+times over. **When a rule lives in a view, only a request can prove it.**
+
+### 7. The app has no inbox — **built 2026-10-10, nobody has used it yet**
+
+He approved Shop O and said: *"I did not receive a notification saying the shop
+is open, but my shop now say open on check O."*
+
+He was right, and it is worse than a missing screen. Grep the whole mobile
+codebase for `notification` and it returns nothing. No service file, no bell, no
+badge, no screen. There are ten service files in `mobile/src/services/` and none
+of them is for notifications.
+
+The backend is working perfectly, which is how this stayed hidden. His admin page
+shows both rows sitting in Neon:
+
+| Notification | To | When | Read at |
+|---|---|---|---|
+| Shop O is open on Check-O | onukwupetrusoge@gmail.com | 10 Oct, 4:42 a.m. | — |
+| A shop is waiting for review | admin@gmail.com | 10 Oct, 4:38 a.m. | — |
+
+Both unread, because nothing in the world can read them. Every notification
+Check-O has created since September — order placed, order accepted, payment
+confirmed, stock running low, shop approved, shop rejected — has been written to
+the database and seen by nobody.
+
+On 2 October I built the low-stock warning and wrote twelve tests for how
+restrained it was: that it fires once and not on every sale, that it respects the
+threshold, that it does not nag. Twelve tests about the manners of a message that
+had nowhere to arrive.
+
+**What it should do:** a bell on the header with an unread count, a screen listing
+them newest first, tapping one marks it read and goes to the thing it is about
+(the order, the shop, the product). Nothing clever. The hard part is already
+built — there is a `Notification` model, it is being written to correctly, and it
+has an `is_read` field waiting to be used.
+
+**Not push notifications.** That is a separate, bigger job needing Expo's push
+service and device tokens. An inbox you have to open is most of the value and a
+fraction of the work.
+
+**Built the same day.** A bell on the Home header of both sides of the app with
+an unread count, and `/notifications` — newest first, unread ones marked, pull to
+refresh, *mark all as read*, and tapping one marks it read and opens the order or
+shop it is about.
+
+That last part needed a change to the model. `notify()` has always taken an
+`event_type` and a `payload` of ids, and always threw both away: they went out
+over the WebSocket and the database row kept only the words. So every message
+ever stored was unactionable by design. Both are now columns
+(`notifications/0003`), which made all eleven existing call sites useful at once
+without touching one of them.
+
+Sixteen new tests, through the API. Two of them are the ones that matter — that
+one person's inbox never shows, and never accepts a mark on, another person's
+messages.
+
+Also deleted `apps/notifications/api.py`: a second copy of the viewset that
+nothing had imported since the app was split into a `views/` package. A dead
+duplicate of a file you are about to edit is exactly how finding #6 stayed
+hidden for eight days.
+
+**Per the rule at the bottom of this file, this is not done.** The code is
+written, 398 tests pass, and no human being has opened the screen. It goes live
+on the next push. Petrus has two unread notifications waiting in Neon — "Shop O
+is open on Check-O" and "A shop is waiting for review" — and they are the first
+thing it will have to render.
+
+---
+
 ## 2026-10-09 — Petrus's first run through the live app
 
 The backend went live on 6 October. On the 9th Petrus set a shop up on his own
@@ -114,9 +216,14 @@ guess about behaviour nobody has shown yet. Not until a real shopper asks.
 
 ## What to build next
 
-3, 4 and 5 are one disease: **the app does not hold on to what it has been
-told**, and asks for commitment before giving anything. They share the same code
-and should be one piece of work.
+**Done first, on the day it was found: 7**, because Check-O now has a real shop
+on it. A vendor who is not told an order arrived is worse than a shopper who has
+to register — the shopper is a person Check-O has not got yet, the vendor is one
+it already has.
+
+Next: 3, 4 and 5, which are one disease: **the app does not hold on to what it
+has been told**, and asks for commitment before giving anything. They share the
+same code and should be one piece of work.
 
 That bundle is the difference between an app you must commit to and one you can
 simply look at. For a shopper who heard about Check-O from a friend, it is

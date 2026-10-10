@@ -71,6 +71,12 @@ export default function RootLayout() {
             <Stack.Screen name="vendor-product/new" />
             <Stack.Screen name="shop-setup" />
           </Stack.Protected>
+          {/* Both sides of the app get the same inbox, so it sits outside the
+              two role groups — a vendor is told about approvals and low stock,
+              a shopper about orders, and it is one list of one model. */}
+          <Stack.Protected guard={signedIn}>
+            <Stack.Screen name="notifications" />
+          </Stack.Protected>
           <Stack.Protected guard={signedIn && !selling}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="shop/[id]" />

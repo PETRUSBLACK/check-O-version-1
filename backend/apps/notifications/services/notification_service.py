@@ -39,6 +39,10 @@ def notify(
         user=user,
         title=title,
         body=body,
+        event_type=event_type,
+        # Kept on the row, not only sent over the socket: the socket reaches a
+        # phone that happens to be open, the row is what the inbox reads later.
+        payload=payload or {},
     )
 
     ws_payload = {
