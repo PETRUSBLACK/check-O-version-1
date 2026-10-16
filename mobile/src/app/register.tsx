@@ -31,6 +31,7 @@ export default function Register() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +42,12 @@ export default function Register() {
     }
     if (password.length < 8) {
       setError("Your password needs at least 8 characters.");
+      return;
+    }
+    // A typo here locks someone out of an account they just made, and on a
+    // phone it is easy to make one. Asked twice, as every sign-up form does.
+    if (password !== confirm) {
+      setError("The two passwords are not the same. Please type them again.");
       return;
     }
     setError(null);
@@ -130,6 +137,14 @@ export default function Register() {
           value={password}
           onChangeText={setPassword}
           placeholder="At least 8 characters"
+          secure
+          autoComplete="new-password"
+        />
+        <TextField
+          label="Confirm password"
+          value={confirm}
+          onChangeText={setConfirm}
+          placeholder="Type it again"
           secure
           autoComplete="new-password"
           onSubmitEditing={submit}

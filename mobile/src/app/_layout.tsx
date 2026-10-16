@@ -71,12 +71,6 @@ export default function RootLayout() {
             <Stack.Screen name="vendor-product/new" />
             <Stack.Screen name="shop-setup" />
           </Stack.Protected>
-          {/* Both sides of the app get the same inbox, so it sits outside the
-              two role groups — a vendor is told about approvals and low stock,
-              a shopper about orders, and it is one list of one model. */}
-          <Stack.Protected guard={signedIn}>
-            <Stack.Screen name="notifications" />
-          </Stack.Protected>
           <Stack.Protected guard={signedIn && !selling}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="shop/[id]" />
@@ -86,6 +80,18 @@ export default function RootLayout() {
             <Stack.Screen name="order-placed" />
             <Stack.Screen name="pay" />
             <Stack.Screen name="search" />
+          </Stack.Protected>
+          {/* Both sides of the app get the same inbox, so it sits outside the
+              two role groups — a vendor is told about approvals and low stock,
+              a shopper about orders, and it is one list of one model.
+
+              KEEP THIS LAST. When the screen a person is on stops being allowed
+              (Register, the moment sign-up succeeds), expo-router lands them on
+              the FIRST allowed screen in this list. Declared above the role
+              groups, that was the inbox: on 2026-10-16 a new shopper finished
+              creating an account and was dropped on "Nothing yet". */}
+          <Stack.Protected guard={signedIn}>
+            <Stack.Screen name="notifications" />
           </Stack.Protected>
         </Stack>
       </SafeAreaProvider>
