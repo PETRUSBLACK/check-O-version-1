@@ -40,7 +40,7 @@ def initiate_checkout_payment(
     if provider not in _VALID_PROVIDERS:
         raise ValueError(f"Invalid provider '{provider}'.")
 
-    group = CheckoutGroup.objects.select_for_update().select_related("customer").get(pk=checkout_group_id)
+    group = CheckoutGroup.objects.select_for_update(of=("self",)).select_related("customer").get(pk=checkout_group_id)
 
     if Payment.objects.filter(checkout_group=group, status=PaymentStatus.SUCCESS).exists():
         raise ValueError("This checkout has already been paid.")
@@ -113,7 +113,7 @@ def initiate_payment(
     if provider not in _VALID_PROVIDERS:
         raise ValueError(f"Invalid provider '{provider}'.")
 
-    order = Order.objects.select_for_update().select_related("customer").get(pk=order_id)
+    order = Order.objects.select_for_update(of=("self",)).select_related("customer").get(pk=order_id)
 
     if Payment.objects.filter(order_id=order_id, status=PaymentStatus.SUCCESS).exists():
         raise ValueError("This order has already been paid.")
@@ -228,7 +228,13 @@ def confirm_payment_via_webhook(*, provider: str, external_ref: str) -> Payment:
 
     with transaction.atomic():
         payment = (
-            Payment.objects.select_for_update()
+            # of=("self",): lock only the payment row. Without it Postgres
+            # refuses, because `order` and `checkout_group` are optional and
+            # are therefore joined on the nullable side — "FOR UPDATE cannot
+            # be applied to the nullable side of an outer join". That error
+            # stopped every payment ever being confirmed on the live server
+            # (2026-10-16); the test database does not enforce it.
+            Payment.objects.select_for_update(of=("self",))
             .select_related("order", "checkout_group")
             .get(pk=payment.pk)
         )
@@ -290,7 +296,7 @@ def _mark_failed(payment: Payment) -> Payment:
 @transaction.atomic
 def confirm_payment_success(*, payment_id: UUID) -> Payment:
     """Admin-only mock confirm. Used in dev/staging only."""
-    payment = Payment.objects.select_for_update().select_related("order").get(pk=payment_id)
+    payment = Payment.objects.select_for_update(of=("self",)).select_related("order").get(pk=payment_id)
     if payment.status == PaymentStatus.SUCCESS:
         return payment
     if payment.status == PaymentStatus.FAILED:
