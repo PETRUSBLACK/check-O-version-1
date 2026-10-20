@@ -367,12 +367,15 @@ def _apply_cancellation(*, order: Order, by: str, user, reason: str, note: str =
     except Exception:
         pass
 
-    # The shop set stock aside for this order and has now had it handed back.
-    # Nobody tells her that either, unless we do it here.
-    try:
-        from apps.notifications.services.notification_service import notify_vendor_order_cancelled
-        notify_vendor_order_cancelled(order=order, by=by)
-    except Exception:
-        logger.exception("notify_vendor_cancelled_failed order=%s", order.pk)
+    # Tell the shop only about an order it had been told about. An unpaid order
+    # that lapses was never announced to her (she is told when money arrives),
+    # so a message saying it was cancelled is about something she never saw.
+    # Petrus got exactly that on 2026-10-10 for an order he never paid.
+    if previous_status not in (OrderStatus.DRAFT.value, OrderStatus.PENDING_PAYMENT.value):
+        try:
+            from apps.notifications.services.notification_service import notify_vendor_order_cancelled
+            notify_vendor_order_cancelled(order=order, by=by)
+        except Exception:
+            logger.exception("notify_vendor_cancelled_failed order=%s", order.pk)
 
     return order

@@ -94,7 +94,7 @@ def update_shipment_status(*, shipment_id: UUID, status: str, note: str = "", lo
     if status not in valid:
         raise ShipmentError(f"Invalid shipment status: {status}")
 
-    shipment = Shipment.objects.select_for_update().select_related("order__customer").get(pk=shipment_id)
+    shipment = Shipment.objects.select_for_update(of=("self",)).select_related("order__customer").get(pk=shipment_id)
 
     if shipment.status == status:
         return shipment

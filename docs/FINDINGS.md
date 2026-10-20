@@ -351,3 +351,39 @@ the screen updates.
 
 **Same lesson as #6 and #9, third time in a day.** I could read the code
 without finding this. A screenshot of Paystack's own dashboard did, in one look.
+
+---
+
+## 11. The payment sweep ran for six days and never settled a single payment
+
+**Found:** 2026-10-16, from one Render log excerpt Petrus pasted.
+
+Paystack's dashboard said **Success**. Check-O's admin said **Pending**. The
+scheduler showed "200 OK" every five minutes. All three were true at once.
+
+**Cause:** `FOR UPDATE cannot be applied to the nullable side of an outer join`.
+`confirm_payment_via_webhook` locked the payment row with `select_for_update()`
+while also loading `order` and `checkout_group` with `select_related`. Both are
+optional links, so Django joined them on the nullable side, and Postgres refuses
+to lock a row in that shape. Every confirmation raised. The sweep caught the
+exception (by design, so one bad payment cannot stop the rest) and logged it.
+The scheduler still got 200 OK because a handled error is not a failed request.
+
+**Why nothing caught it:** the tests run on SQLite, which silently ignores row
+locks. 422 tests passed against a database that cannot see this class of bug.
+It also means the **original** failure on 2026-10-10 (order Paid, payment
+Pending) was probably this same bug, not a missing deploy.
+
+**Fixed:** `select_for_update(of=("self",))` — lock only the payment row, which
+is all that was ever needed. Applied to every lookup that combines a lock with
+`select_related` (payments, orders, shipments, products). Verified by running the
+payment-settle tests against a real Postgres: they fail with the exact
+production error on the old code and pass on the new. 186 tests pass on Postgres.
+
+**Lesson:** a green test run on the wrong database proves nothing about the
+database that matters. Anything involving locks, constraints or concurrency
+must be run against Postgres before it is called done.
+
+**Still open:** run the whole suite on Postgres in CI, not just the payment
+and order apps; and make the scheduler's response report a count of payments
+it failed to settle, so a six-day silence cannot hide behind "200 OK".
